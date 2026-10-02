@@ -36,8 +36,11 @@ export function generateExtensionFiles(config: ExtensionConfig): GeneratedFile[]
     author: 'TabChroma Studio',
     browser_specific_settings: {
       gecko: {
-        id: 'tabchroma-tab-color@extension.local',
+        id: config.geckoId || 'tabchroma-tab-color@whosmann.de',
         strict_min_version: '109.0',
+        data_collection_permissions: {
+          required: ['none'],
+        },
       },
     },
     permissions: [
@@ -70,6 +73,8 @@ export function generateExtensionFiles(config: ExtensionConfig): GeneratedFile[]
     ],
     icons: {
       '48': 'icons/icon-48.svg',
+      '96': 'icons/icon-96.svg',
+      '128': 'icons/icon-128.svg',
     },
   };
 
@@ -613,36 +618,82 @@ async function loadConfig() {
 
 function renderRules() {
   const tbody = document.getElementById('rules-body');
-  tbody.innerHTML = '';
+  if (!tbody) return;
+
+  tbody.textContent = '';
 
   if (!appConfig || !appConfig.rules || appConfig.rules.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 32px; color: #64748b;">No rules configured. Click "+ Add New Rule" to create one.</td></tr>';
+    const emptyTr = document.createElement('tr');
+    const emptyTd = document.createElement('td');
+    emptyTd.colSpan = 7;
+    emptyTd.style.textAlign = 'center';
+    emptyTd.style.padding = '32px';
+    emptyTd.style.color = '#64748b';
+    emptyTd.textContent = 'No rules configured. Click "+ Add New Rule" to create one.';
+    emptyTr.appendChild(emptyTd);
+    tbody.appendChild(emptyTr);
     return;
   }
 
   appConfig.rules.forEach((rule, idx) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = \`
-      <td><span class="color-swatch" style="background-color: \${rule.color}"></span>\${rule.firefoxContainerColor}</td>
-      <td style="font-weight: 600;">\${rule.name}</td>
-      <td><span class="badge">\${rule.patternType}</span></td>
-      <td><code class="pattern-code">\${rule.pattern}</code></td>
-      <td>\${rule.containerName || '-'}</td>
-      <td>\${rule.enabled ? '<span style="color:#10b981">Enabled</span>' : '<span style="color:#64748b">Disabled</span>'}</td>
-      <td>
-        <button class="del-btn" data-index="\${idx}">Delete</button>
-      </td>
-    \`;
-    tbody.appendChild(tr);
-  });
 
-  document.querySelectorAll('.del-btn').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const index = parseInt(e.target.getAttribute('data-index'), 10);
-      appConfig.rules.splice(index, 1);
+    const tdColor = document.createElement('td');
+    const swatch = document.createElement('span');
+    swatch.className = 'color-swatch';
+    swatch.style.backgroundColor = rule.color || '#37adff';
+    tdColor.appendChild(swatch);
+    tdColor.appendChild(document.createTextNode(rule.firefoxContainerColor || 'blue'));
+    tr.appendChild(tdColor);
+
+    const tdName = document.createElement('td');
+    tdName.style.fontWeight = '600';
+    tdName.textContent = rule.name || '';
+    tr.appendChild(tdName);
+
+    const tdType = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = rule.patternType || 'domain';
+    tdType.appendChild(badge);
+    tr.appendChild(tdType);
+
+    const tdPattern = document.createElement('td');
+    const code = document.createElement('code');
+    code.className = 'pattern-code';
+    code.textContent = rule.pattern || '';
+    tdPattern.appendChild(code);
+    tr.appendChild(tdPattern);
+
+    const tdContainer = document.createElement('td');
+    tdContainer.textContent = rule.containerName || '-';
+    tr.appendChild(tdContainer);
+
+    const tdStatus = document.createElement('td');
+    const statusSpan = document.createElement('span');
+    if (rule.enabled) {
+      statusSpan.style.color = '#10b981';
+      statusSpan.textContent = 'Enabled';
+    } else {
+      statusSpan.style.color = '#64748b';
+      statusSpan.textContent = 'Disabled';
+    }
+    tdStatus.appendChild(statusSpan);
+    tr.appendChild(tdStatus);
+
+    const tdAction = document.createElement('td');
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async () => {
+      appConfig.rules.splice(idx, 1);
       await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
       renderRules();
     });
+    tdAction.appendChild(delBtn);
+    tr.appendChild(tdAction);
+
+    tbody.appendChild(tr);
   });
 }
 
@@ -728,11 +779,23 @@ document.addEventListener('DOMContentLoaded', loadConfig);
     language: 'javascript',
   });
 
-  // 8. icons/icon-48.svg
+  // 8. icons
   files.push({
     name: 'icon-48.svg',
     path: 'icons/icon-48.svg',
     content: createExtensionSvgIcon(),
+    language: 'html',
+  });
+  files.push({
+    name: 'icon-96.svg',
+    path: 'icons/icon-96.svg',
+    content: createExtensionSvgIcon('#37adff'),
+    language: 'html',
+  });
+  files.push({
+    name: 'icon-128.svg',
+    path: 'icons/icon-128.svg',
+    content: createExtensionSvgIcon('#ff4f5e'),
     language: 'html',
   });
 
@@ -765,6 +828,30 @@ Automatically colors Firefox tabs based on custom URL patterns, domain names, re
     language: 'markdown',
   });
 
+  // 10. PRIVACY.md (Compliant with Mozilla AMO Privacy Policy Requirements)
+  const privacyMd = `# Privacy Policy for TabChroma
+
+Last updated: October 2026
+
+TabChroma is committed to protecting your privacy.
+
+## Data Collection & Handling
+- **Zero Remote Tracking:** TabChroma does not collect, record, track, transmit, or sell any personal data, browsing history, tabs, or visited URLs.
+- **Local Storage Only:** All user configurations, URL rules, and container color associations are stored strictly locally on your device via Firefox's standard \`browser.storage.local\` API.
+- **No Third-Party Analytics or Services:** The extension contains zero external trackers, analytics SDKs, advertising beacons, or telemetry.
+- **Permissions Justification:**
+  - \`contextualIdentities\` & \`cookies\`: Required solely to open matching URLs in designated Firefox colored container tabs.
+  - \`tabs\` & \`webNavigation\`: Required to evaluate the current tab URL against your configured color rules.
+  - \`theme\`: Required to dynamically adjust the active tab header accent color.
+`;
+
+  files.push({
+    name: 'PRIVACY.md',
+    path: 'PRIVACY.md',
+    content: privacyMd,
+    language: 'markdown',
+  });
+
   // 10. rules.json
   files.push({
     name: 'rules.json',
@@ -792,6 +879,59 @@ export async function downloadExtensionZip(config: ExtensionConfig, filename = '
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/**
+ * Packs all files into a Firefox .xpi archive with application/x-xpinstall MIME type
+ * Firefox can install this file directly via "Install Add-on From File..." or Drag & Drop.
+ */
+export async function downloadExtensionXpi(config: ExtensionConfig, filename = 'tabchroma-tab-color.xpi'): Promise<void> {
+  const files = generateExtensionFiles(config);
+  const zip = new JSZip();
+
+  for (const file of files) {
+    zip.file(file.path, file.content);
+  }
+
+  const blob = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/x-xpinstall',
+  });
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.setAttribute('type', 'application/x-xpinstall');
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/**
+ * Downloads an enterprise policies.json file for permanent installation on standard Firefox
+ */
+export function downloadPoliciesJson(extensionId = 'tabchroma-tab-color@extension.local'): void {
+  const policies = {
+    policies: {
+      ExtensionSettings: {
+        [extensionId]: {
+          installation_mode: 'normal_installed',
+          install_url: 'file:///path/to/tabchroma-tab-color.xpi'
+        }
+      }
+    }
+  };
+  const blob = new Blob([JSON.stringify(policies, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'policies.json';
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);

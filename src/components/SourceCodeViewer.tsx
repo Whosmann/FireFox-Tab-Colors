@@ -15,9 +15,10 @@ import { generateExtensionFiles, downloadExtensionZip } from '../utils/extension
 interface SourceCodeViewerProps {
   config: ExtensionConfig;
   onExportZip: () => void;
+  onExportXpi: () => void;
 }
 
-export const SourceCodeViewer: React.FC<SourceCodeViewerProps> = ({ config, onExportZip }) => {
+export const SourceCodeViewer: React.FC<SourceCodeViewerProps> = ({ config, onExportZip, onExportXpi }) => {
   const files: GeneratedFile[] = generateExtensionFiles(config);
   const [selectedFile, setSelectedFile] = useState<GeneratedFile>(files[0]);
   const [copied, setCopied] = useState(false);
@@ -49,17 +50,23 @@ export const SourceCodeViewer: React.FC<SourceCodeViewerProps> = ({ config, onEx
             Firefox Add-on Source Code Inspector
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Inspect the exact WebExtension files generated for your rules. Ready to load into Firefox via <code className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5 rounded">about:debugging</code>.
+            Inspect the exact WebExtension files generated for your rules. Ready to load into Firefox via <code className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5 rounded">about:debugging</code> or direct <code className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5 rounded">.xpi</code>.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={onExportZip}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 active:bg-sky-700 rounded-lg shadow-xs transition-colors"
+            onClick={onExportXpi}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-500 active:bg-orange-700 rounded-lg shadow-xs transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download All (.zip)</span>
+            <span>Download .xpi</span>
+          </button>
+          <button
+            onClick={onExportZip}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            <span>Download .zip</span>
           </button>
         </div>
       </div>

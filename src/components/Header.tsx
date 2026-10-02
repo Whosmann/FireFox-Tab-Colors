@@ -1,10 +1,11 @@
 import React from 'react';
-import { Download, BookOpen, Layers, Sliders, Code2 } from 'lucide-react';
+import { Download, BookOpen, Layers, Sliders, Code2, Globe } from 'lucide-react';
 
 interface HeaderProps {
-  activeTab: 'simulator' | 'rules' | 'code' | 'guide';
-  setActiveTab: (tab: 'simulator' | 'rules' | 'code' | 'guide') => void;
+  activeTab: 'simulator' | 'rules' | 'code' | 'guide' | 'publish';
+  setActiveTab: (tab: 'simulator' | 'rules' | 'code' | 'guide' | 'publish') => void;
   onExportZip: () => void;
+  onExportXpi: () => void;
   isExporting?: boolean;
 }
 
@@ -12,6 +13,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   onExportZip,
+  onExportXpi,
   isExporting,
 }) => {
   return (
@@ -30,8 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </div>
 
-        {/* Zone 2: Clean 4 nav links with active state */}
-        <nav className="flex items-center gap-1 sm:gap-2">
+        {/* Zone 2: Clean nav links with active state */}
+        <nav className="flex items-center gap-1 sm:gap-1.5">
           <button
             onClick={() => setActiveTab('simulator')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
@@ -78,20 +80,43 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Install Guide</span>
-            <span className="md:hidden">Guide</span>
+            <span className="hidden md:inline">Install in Firefox</span>
+            <span className="md:hidden">Install</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('publish')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+              activeTab === 'publish'
+                ? 'bg-slate-800 text-sky-400 border border-slate-700'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Publish to AMO</span>
+            <span className="md:hidden">Publish</span>
           </button>
         </nav>
 
-        {/* Zone 3: Primary action button */}
+        {/* Zone 3: Primary action button with split options */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={onExportXpi}
+            disabled={isExporting}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-500 active:bg-orange-700 rounded-lg shadow-sm transition-colors whitespace-nowrap disabled:opacity-50"
+            title="Download Firefox .xpi installable package"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Install in Firefox (.xpi)</span>
+          </button>
+
           <button
             onClick={onExportZip}
             disabled={isExporting}
-            className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 active:bg-sky-700 rounded-lg shadow-sm transition-colors whitespace-nowrap disabled:opacity-50"
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors whitespace-nowrap disabled:opacity-50"
+            title="Download source code archive"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>{isExporting ? 'Packaging...' : 'Export Add-on (.zip)'}</span>
+            <span>.zip</span>
           </button>
         </div>
       </div>

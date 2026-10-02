@@ -11,9 +11,10 @@ import { RuleManager } from './components/RuleManager';
 import { RuleEditorModal } from './components/RuleEditorModal';
 import { SourceCodeViewer } from './components/SourceCodeViewer';
 import { InstallGuideView } from './components/InstallGuideView';
+import { PublishGuideView } from './components/PublishGuideView';
 import { ExtensionConfig, TabColorRule } from './types/extension';
 import { PRESET_PACKS } from './utils/presetRules';
-import { downloadExtensionZip } from './utils/extensionGenerator';
+import { downloadExtensionZip, downloadExtensionXpi } from './utils/extensionGenerator';
 
 const INITIAL_RULES: TabColorRule[] = [
   ...PRESET_PACKS[0].rules,
@@ -43,7 +44,7 @@ export default function App() {
     return INITIAL_CONFIG;
   });
 
-  const [activeTab, setActiveTab] = useState<'simulator' | 'rules' | 'code' | 'guide'>('simulator');
+  const [activeTab, setActiveTab] = useState<'simulator' | 'rules' | 'code' | 'guide' | 'publish'>('simulator');
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<TabColorRule | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -120,10 +121,23 @@ export default function App() {
     try {
       setIsExporting(true);
       await downloadExtensionZip(config);
-      showToast('Extension downloaded! Ready to load in about:debugging.');
+      showToast('Extension source (.zip) downloaded! Ready to inspect or submit.');
     } catch (err) {
       console.error(err);
       alert('Failed to package extension.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportXpi = async () => {
+    try {
+      setIsExporting(true);
+      await downloadExtensionXpi(config);
+      showToast('Firefox .xpi package downloaded! Drag into Firefox or install via about:addons.');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to package .xpi extension.');
     } finally {
       setIsExporting(false);
     }
@@ -136,6 +150,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onExportZip={handleExportZip}
+        onExportXpi={handleExportXpi}
         isExporting={isExporting}
       />
 
@@ -183,11 +198,23 @@ export default function App() {
           <SourceCodeViewer
             config={config}
             onExportZip={handleExportZip}
+            onExportXpi={handleExportXpi}
           />
         )}
 
         {activeTab === 'guide' && (
-          <InstallGuideView onExportZip={handleExportZip} />
+          <InstallGuideView
+            onExportZip={handleExportZip}
+            onExportXpi={handleExportXpi}
+          />
+        )}
+
+        {activeTab === 'publish' && (
+          <PublishGuideView
+            config={config}
+            onExportZip={handleExportZip}
+            onExportXpi={handleExportXpi}
+          />
         )}
       </main>
 
@@ -224,6 +251,12 @@ export default function App() {
               className="hover:text-slate-800 transition-colors"
             >
               How to Install
+            </button>
+            <button
+              onClick={() => setActiveTab('publish')}
+              className="hover:text-slate-800 transition-colors"
+            >
+              Publish to AMO
             </button>
           </div>
         </div>

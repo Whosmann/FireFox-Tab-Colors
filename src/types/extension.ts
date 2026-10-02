@@ -50,6 +50,7 @@ export interface ExtensionConfig {
   extensionName: string;
   extensionVersion: string;
   extensionDescription: string;
+  geckoId?: string;
   defaultColor: string;
   defaultContainerColor: FirefoxContainerColor;
   defaultMode: ColorMode;
