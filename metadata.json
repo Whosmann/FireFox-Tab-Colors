@@ -1,0 +1,6 @@
+{
+  "name": "TabChroma - Firefox URL Tab Color Extension Studio",
+  "description": "Design, test, and export a custom Firefox Add-on to automatically color tabs based on URL patterns, regex rules, and Firefox Containers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
