@@ -30,6 +30,18 @@ export const UrlTesterBar: React.FC<UrlTesterBarProps> = ({ rules, onAddRuleForU
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 text-xs">
           <span className="text-slate-400 text-xs shrink-0">Sample URLs:</span>
           <button
+            onClick={() => setTestUrl('https://248924.4.whomsann.de/app')}
+            className="px-2 py-0.5 rounded bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100 transition-colors whitespace-nowrap text-xs font-mono"
+          >
+            248924.4.whomsann.de
+          </button>
+          <button
+            onClick={() => setTestUrl('https://248923.32.whomsann.de/app')}
+            className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors whitespace-nowrap text-xs font-mono"
+          >
+            248923.32.whomsann.de
+          </button>
+          <button
             onClick={() => setTestUrl('https://console.aws.amazon.com/ec2/home')}
             className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors whitespace-nowrap text-xs"
           >

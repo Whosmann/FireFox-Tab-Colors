@@ -89,13 +89,32 @@ export function testRuleMatch(url: string, rule: TabColorRule): { matched: boole
       const targetDomain = rule.pattern.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '');
       if (parsedUrl) {
         const host = parsedUrl.hostname.toLowerCase();
-        if (host === targetDomain || host.endsWith(`.${targetDomain}`)) {
+        if (host === targetDomain) {
           return { matched: true, reason: `Host ${host} matches domain rule ${targetDomain}` };
         }
+        if (host.endsWith(`.${targetDomain}`)) {
+          return { matched: true, reason: `Host ${host} matches as a subdomain of domain rule ${targetDomain}` };
+        }
       }
-      // String fallback
-      if (cleanUrl.toLowerCase().includes(targetDomain)) {
-        return { matched: true, reason: `URL contains domain token ${targetDomain}` };
+      // String fallback only if URL could not be parsed
+      if (!parsedUrl && cleanUrl.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').startsWith(targetDomain)) {
+        return { matched: true, reason: `Host matches domain token ${targetDomain}` };
+      }
+      return { matched: false };
+    }
+
+    case 'exact_host': {
+      const targetHost = rule.pattern.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '');
+      if (parsedUrl) {
+        const host = parsedUrl.hostname.toLowerCase();
+        if (host === targetHost) {
+          return { matched: true, reason: `Host ${host} exactly matches host rule ${targetHost} (subdomains isolated)` };
+        }
+        return { matched: false, reason: `Host ${host} does not equal exact host ${targetHost}` };
+      }
+      const rawHost = cleanUrl.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '').toLowerCase();
+      if (rawHost === targetHost) {
+        return { matched: true, reason: `Exact host match: ${targetHost}` };
       }
       return { matched: false };
     }

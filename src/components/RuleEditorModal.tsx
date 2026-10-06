@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Check, AlertCircle } from 'lucide-react';
 import { 
   FirefoxContainerColor, 
@@ -20,17 +20,19 @@ interface RuleEditorModalProps {
   initialRule?: TabColorRule | null;
 }
 
-const CONTAINER_ICONS: { id: FirefoxContainerIcon; label: string; icon: string }[] = [
-  { id: 'circle', label: 'Circle', icon: '●' },
-  { id: 'briefcase', label: 'Briefcase', icon: '💼' },
-  { id: 'fingerprint', label: 'Fingerprint', icon: '🔒' },
-  { id: 'dollar', label: 'Dollar', icon: '💰' },
-  { id: 'cart', label: 'Cart', icon: '🛒' },
-  { id: 'tree', label: 'Tree', icon: '🌲' },
-  { id: 'chill', label: 'Chill', icon: '☕' },
-  { id: 'vacation', label: 'Vacation', icon: '🏖️' },
-  { id: 'food', label: 'Food', icon: '🍔' },
-  { id: 'pet', label: 'Pet', icon: '🐾' },
+const CONTAINER_ICONS: { id: FirefoxContainerIcon; label: string; icon: string; category: string }[] = [
+  { id: 'circle', label: 'Circle', icon: '●', category: 'General' },
+  { id: 'briefcase', label: 'Briefcase', icon: '💼', category: 'Work' },
+  { id: 'fingerprint', label: 'Security', icon: '🔒', category: 'Auth' },
+  { id: 'dollar', label: 'Finance', icon: '💰', category: 'Banking' },
+  { id: 'cart', label: 'Shopping', icon: '🛒', category: 'Orders' },
+  { id: 'tree', label: 'Dev / Tree', icon: '🌲', category: 'Code' },
+  { id: 'chill', label: 'Chill', icon: '☕', category: 'Media' },
+  { id: 'vacation', label: 'Vacation', icon: '🏖️', category: 'Travel' },
+  { id: 'food', label: 'Food', icon: '🍔', category: 'Dining' },
+  { id: 'fruit', label: 'Fruit', icon: '🍎', category: 'Health' },
+  { id: 'pet', label: 'Pet', icon: '🐾', category: 'Animals' },
+  { id: 'gift', label: 'Gift', icon: '🎁', category: 'Special' },
 ];
 
 export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
@@ -53,6 +55,35 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
   const [colorMode, setColorMode] = useState<ColorMode>(initialRule?.colorMode || 'hybrid');
   const [accentBorder, setAccentBorder] = useState(initialRule?.accentBorder ?? true);
   const [enabled, setEnabled] = useState(initialRule?.enabled ?? true);
+
+  // Sync state whenever initialRule or isOpen changes so edit info ALWAYS loads accurately
+  useEffect(() => {
+    if (isOpen) {
+      if (initialRule) {
+        setName(initialRule.name || '');
+        setPatternType(initialRule.patternType || 'domain');
+        setPattern(initialRule.pattern || '');
+        setColor(initialRule.color || '#ff4f5e');
+        setContainerColor(initialRule.firefoxContainerColor || 'red');
+        setContainerIcon(initialRule.firefoxContainerIcon || 'circle');
+        setContainerName(initialRule.containerName || '');
+        setColorMode(initialRule.colorMode || 'hybrid');
+        setAccentBorder(initialRule.accentBorder ?? true);
+        setEnabled(initialRule.enabled ?? true);
+      } else {
+        setName('');
+        setPatternType('domain');
+        setPattern('');
+        setColor('#37adff');
+        setContainerColor('blue');
+        setContainerIcon('circle');
+        setContainerName('');
+        setColorMode('hybrid');
+        setAccentBorder(true);
+        setEnabled(true);
+      }
+    }
+  }, [isOpen, initialRule]);
 
   if (!isOpen) return null;
 
@@ -141,19 +172,26 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
             </label>
 
             {/* Pattern Type Selector */}
-            <div className="grid grid-cols-5 gap-1 p-1 bg-slate-100 rounded-lg text-xs">
-              {(['domain', 'wildcard', 'prefix', 'regex', 'exact'] as UrlPatternType[]).map((type) => (
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 p-1 bg-slate-100 rounded-lg text-xs">
+              {([
+                { type: 'domain', label: 'Domain' },
+                { type: 'exact_host', label: 'Exact Host' },
+                { type: 'wildcard', label: 'Wildcard' },
+                { type: 'prefix', label: 'Prefix' },
+                { type: 'regex', label: 'Regex' },
+                { type: 'exact', label: 'Exact URL' }
+              ] as { type: UrlPatternType; label: string }[]).map(({ type, label }) => (
                 <button
                   key={type}
                   type="button"
                   onClick={() => setPatternType(type)}
-                  className={`py-1.5 px-2 rounded-md font-medium text-center capitalize transition-colors ${
+                  className={`py-1.5 px-1.5 rounded-md font-medium text-center text-xs transition-colors ${
                     patternType === type
-                      ? 'bg-white text-slate-900 shadow-xs'
+                      ? 'bg-white text-slate-900 shadow-xs font-semibold'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {type}
+                  {label}
                 </button>
               ))}
             </div>
@@ -167,7 +205,9 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 onChange={(e) => setPattern(e.target.value)}
                 placeholder={
                   patternType === 'domain'
-                    ? 'e.g. github.com or aws.amazon.com'
+                    ? 'e.g. whomsann.de or github.com'
+                    : patternType === 'exact_host'
+                    ? 'e.g. 248924.4.whomsann.de (isolates other subdomains!)'
                     : patternType === 'wildcard'
                     ? 'e.g. *.staging.com/* or localhost:*'
                     : patternType === 'prefix'
@@ -189,8 +229,17 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
               </div>
             )}
 
-            <div className="text-[11px] text-slate-400">
-              {patternType === 'domain' && 'Matches exact host or any subdomain (e.g. repo.github.com matches github.com).'}
+            <div className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-md border border-slate-200">
+              {patternType === 'domain' && (
+                <span>
+                  <strong>Domain:</strong> Matches exact domain AND all its subdomains (e.g. <code>whomsann.de</code> matches both <code>248924.4.whomsann.de</code> and <code>248923.32.whomsann.de</code>).
+                </span>
+              )}
+              {patternType === 'exact_host' && (
+                <span>
+                  <strong>Exact Host (Empfohlen bei Subdomains):</strong> Matches <em>NUR</em> diesen exakten Host (z. B. <code>248924.4.whomsann.de</code>). Andere Subdomains wie <code>248923.32.whomsann.de</code> werden <strong>nicht</strong> zugeteilt!
+                </span>
+              )}
               {patternType === 'wildcard' && 'Supports * for multiple characters and ? for single character.'}
               {patternType === 'regex' && 'Case-insensitive JavaScript regular expression.'}
               {patternType === 'prefix' && 'Matches any URL beginning with this exact prefix.'}
@@ -252,43 +301,58 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
             </div>
           </div>
 
-          {/* Container Name & Icon */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Firefox Container Identity Name
+          {/* Container Name */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Firefox Container Identity Name
+            </label>
+            <input
+              type="text"
+              value={containerName}
+              onChange={(e) => setContainerName(e.target.value)}
+              placeholder="e.g. Work, Staging, AWS"
+              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+            <span className="text-[10px] text-slate-400 mt-0.5 block">
+              Shown in Firefox address bar container badge.
+            </span>
+          </div>
+
+          {/* Firefox Container Icon Picker Grid */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-700">
+                Firefox Container Icon Picker
               </label>
-              <input
-                type="text"
-                value={containerName}
-                onChange={(e) => setContainerName(e.target.value)}
-                placeholder="e.g. Work, Staging, AWS"
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-              <span className="text-[10px] text-slate-400 mt-0.5 block">
-                Shown in Firefox address bar container badge.
+              <span className="text-[11px] font-medium text-sky-600 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                Selected: {CONTAINER_ICONS.find((i) => i.id === containerIcon)?.icon} {CONTAINER_ICONS.find((i) => i.id === containerIcon)?.label}
               </span>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Firefox Container Icon
-              </label>
-              <select
-                value={containerIcon}
-                onChange={(e) => setContainerIcon(e.target.value as FirefoxContainerIcon)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white"
-              >
-                {CONTAINER_ICONS.map((icon) => (
-                  <option key={icon.id} value={icon.id}>
-                    {icon.icon} {icon.label}
-                  </option>
-                ))}
-              </select>
-              <span className="text-[10px] text-slate-400 mt-0.5 block">
-                Icon displayed next to the tab in Firefox.
-              </span>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {CONTAINER_ICONS.map((icon) => {
+                const isSelected = containerIcon === icon.id;
+                return (
+                  <button
+                    key={icon.id}
+                    type="button"
+                    onClick={() => setContainerIcon(icon.id)}
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all ${
+                      isSelected
+                        ? 'border-sky-500 bg-sky-50/80 ring-2 ring-sky-500/20 text-sky-950 font-semibold shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <span className="text-xl leading-none mb-1">{icon.icon}</span>
+                    <span className="text-[11px] leading-tight truncate w-full">{icon.label}</span>
+                    <span className="text-[9px] text-slate-400 leading-none mt-0.5">{icon.category}</span>
+                  </button>
+                );
+              })}
             </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Native Firefox icon displayed in the container badge pill and tab indicator.
+            </span>
           </div>
 
           {/* Color Mode & Top Bar Accent */}
@@ -366,13 +430,16 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-white rounded-t-lg text-xs font-medium shadow-sm"
                 style={{ borderTop: `3px solid ${color}` }}
               >
-                <span>🦊</span>
+                <span className="text-sm">
+                  {CONTAINER_ICONS.find((i) => i.id === containerIcon)?.icon || '🦊'}
+                </span>
                 <span>{name || 'Tab Preview'}</span>
                 <span
-                  className="text-[10px] px-1 rounded ml-1"
+                  className="text-[10px] px-1.5 py-0.5 rounded ml-1 font-semibold flex items-center gap-1"
                   style={{ backgroundColor: `${color}33`, color }}
                 >
-                  {containerName || 'Container'}
+                  <span>{CONTAINER_ICONS.find((i) => i.id === containerIcon)?.icon}</span>
+                  <span>{containerName || 'Container'}</span>
                 </span>
               </div>
             </div>

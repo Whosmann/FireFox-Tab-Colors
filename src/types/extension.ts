@@ -3,7 +3,7 @@
  * Core Types & Schema
  */
 
-export type UrlPatternType = 'wildcard' | 'domain' | 'prefix' | 'regex' | 'exact';
+export type UrlPatternType = 'wildcard' | 'domain' | 'exact_host' | 'prefix' | 'regex' | 'exact';
 
 export type FirefoxContainerColor =
   | 'blue'
@@ -58,6 +58,7 @@ export interface ExtensionConfig {
   enablePageTopBar: boolean;
   enableFaviconBadge: boolean;
   enableActiveTabTheme: boolean;
+  revertUnmatchedToDefault?: boolean;
 }
 
 export interface MatchResult {

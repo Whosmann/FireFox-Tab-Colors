@@ -140,6 +140,12 @@ function evaluateUrlMatch(url, rule) {
         const target = rule.pattern.toLowerCase().replace(/^(https?:\\/\\/)?(www\\.)?/, '').replace(/\\/.*$/, '');
         return host === target || host.endsWith('.' + target);
       }
+      case 'exact_host': {
+        const parsed = new URL(cleanUrl.startsWith('http') ? cleanUrl : 'https://' + cleanUrl);
+        const host = parsed.hostname.toLowerCase();
+        const target = rule.pattern.toLowerCase().replace(/^(https?:\\/\\/)?(www\\.)?/, '').replace(/\\/.*$/, '');
+        return host === target;
+      }
       case 'prefix': {
         return cleanUrl.toLowerCase().startsWith(rule.pattern.toLowerCase());
       }
@@ -230,12 +236,28 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (!details.url || details.url.startsWith('about:') || details.url.startsWith('moz-extension:')) return;
 
   const rule = findMatchingRule(details.url);
-  if (!rule) return;
 
-  // If container routing is active for this rule
-  if (rule.colorMode === 'container' || rule.colorMode === 'hybrid') {
-    try {
-      const tab = await browser.tabs.get(details.tabId);
+  try {
+    const tab = await browser.tabs.get(details.tabId);
+
+    // If no rule matches, but the current tab is in a colored container:
+    // Reopen in default container so it doesn't get stuck in the previous container
+    if (!rule) {
+      if (appConfig.revertUnmatchedToDefault !== false && tab.cookieStoreId && tab.cookieStoreId !== 'firefox-default') {
+        await browser.tabs.create({
+          url: details.url,
+          cookieStoreId: 'firefox-default',
+          index: tab.index,
+          active: tab.active,
+          windowId: tab.windowId,
+        });
+        await browser.tabs.remove(details.tabId);
+      }
+      return;
+    }
+
+    // If container routing is active for this rule
+    if (rule.colorMode === 'container' || rule.colorMode === 'hybrid') {
       const container = await getOrCreateContainer(
         rule.containerName || rule.name,
         rule.firefoxContainerColor || 'blue',
@@ -253,9 +275,9 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
         });
         await browser.tabs.remove(details.tabId);
       }
-    } catch (err) {
-      console.warn('[TabChroma] Tab routing error:', err);
     }
+  } catch (err) {
+    console.warn('[TabChroma] Tab routing error:', err);
   }
 });
 
@@ -577,6 +599,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; margin-bottom: 8px; }
     .color-opt { height: 32px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
     .color-opt.selected { border-color: #fff; box-shadow: 0 0 0 2px #38bdf8; }
+    .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
+    .icon-btn { background: #1e293b; border: 1px solid #374151; border-radius: 8px; padding: 6px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #cbd5e1; transition: all 0.15s; }
+    .icon-btn:hover { background: #334155; color: #fff; border-color: #64748b; }
+    .icon-btn.selected { background: rgba(56, 189, 248, 0.15); border-color: #38bdf8; color: #38bdf8; font-weight: 700; box-shadow: 0 0 0 1px #38bdf8; }
+    .icon-sym { font-size: 16px; margin-bottom: 2px; }
+    .icon-lbl { font-size: 10px; }
+    .update-banner { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 14px 18px; margin-top: 24px; font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    .update-banner code { background: #1e293b; color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
     .preview-box { background: #1e293b; border-radius: 8px; padding: 12px; margin-top: 14px; border: 1px solid #334155; }
     .preview-tab { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 6px 6px 0 0; background: #0f172a; color: #fff; font-size: 12px; font-weight: 600; border-top: 3px solid #ff4f5e; }
     .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 14px; border-top: 1px solid #1f2937; }
@@ -613,6 +643,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         <!-- Rendered by options.js -->
       </tbody>
     </table>
+
+    <div class="update-banner">
+      <div>
+        <strong style="color: #f8fafc;">📦 How to update this package in Firefox:</strong>
+        <span style="margin-left: 6px;">Open <code>about:addons</code> &rarr; click <strong>⚙️ (Gear icon)</strong> &rarr; <strong>"Install Add-on From File..."</strong> and select your newly downloaded <code>.xpi</code>. Firefox will update TabChroma in-place and preserve your rules!</span>
+      </div>
+    </div>
   </div>
 
   <!-- Rule Edit & Create Modal -->
@@ -631,7 +668,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="form-group">
         <label class="form-label" for="inp-type">Match Type</label>
         <select id="inp-type" class="form-select">
-          <option value="domain">Domain (e.g. github.com, aws.amazon.com)</option>
+          <option value="domain">Domain (Matches domain and all subdomains)</option>
+          <option value="exact_host">Exact Host (Only this exact host/subdomain, e.g. 248924.4.whomsann.de)</option>
           <option value="wildcard">Wildcard (e.g. *.staging.com/*, localhost:*)</option>
           <option value="prefix">Prefix (e.g. https://console.aws.amazon.com/)</option>
           <option value="regex">Regular Expression (e.g. ^https?:\/\/(prod|live)\..*)</option>
@@ -670,19 +708,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="inp-icon">Container Icon</label>
-        <select id="inp-icon" class="form-select">
-          <option value="circle">● Circle</option>
-          <option value="briefcase">💼 Briefcase</option>
-          <option value="fingerprint">🔒 Fingerprint / Security</option>
-          <option value="dollar">💰 Dollar / Finance</option>
-          <option value="cart">🛒 Cart / Shopping</option>
-          <option value="tree">🌲 Tree / Nature</option>
-          <option value="chill">☕ Chill / Leisure</option>
-          <option value="vacation">🏖️ Vacation</option>
-          <option value="food">🍔 Food</option>
-          <option value="pet">🐾 Pet</option>
-        </select>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+          <label class="form-label" style="margin-bottom:0;">Firefox Container Icon Picker</label>
+          <span id="icon-selected-label" style="font-size:11px; color:#38bdf8; font-weight:600;">● Circle</span>
+        </div>
+        <input type="hidden" id="inp-icon" value="circle">
+        <div class="icon-grid" id="icon-grid">
+          <button type="button" class="icon-btn" data-icon="circle" data-label="Circle"><span class="icon-sym">●</span><span class="icon-lbl">Circle</span></button>
+          <button type="button" class="icon-btn" data-icon="briefcase" data-label="Briefcase"><span class="icon-sym">💼</span><span class="icon-lbl">Briefcase</span></button>
+          <button type="button" class="icon-btn" data-icon="fingerprint" data-label="Security"><span class="icon-sym">🔒</span><span class="icon-lbl">Security</span></button>
+          <button type="button" class="icon-btn" data-icon="dollar" data-label="Finance"><span class="icon-sym">💰</span><span class="icon-lbl">Finance</span></button>
+          <button type="button" class="icon-btn" data-icon="cart" data-label="Shopping"><span class="icon-sym">🛒</span><span class="icon-lbl">Shopping</span></button>
+          <button type="button" class="icon-btn" data-icon="tree" data-label="Dev / Tree"><span class="icon-sym">🌲</span><span class="icon-lbl">Dev / Tree</span></button>
+          <button type="button" class="icon-btn" data-icon="chill" data-label="Chill"><span class="icon-sym">☕</span><span class="icon-lbl">Chill</span></button>
+          <button type="button" class="icon-btn" data-icon="vacation" data-label="Vacation"><span class="icon-sym">🏖️</span><span class="icon-lbl">Vacation</span></button>
+          <button type="button" class="icon-btn" data-icon="food" data-label="Food"><span class="icon-sym">🍔</span><span class="icon-lbl">Food</span></button>
+          <button type="button" class="icon-btn" data-icon="fruit" data-label="Fruit"><span class="icon-sym">🍎</span><span class="icon-lbl">Fruit</span></button>
+          <button type="button" class="icon-btn" data-icon="pet" data-label="Pet"><span class="icon-sym">🐾</span><span class="icon-lbl">Pet</span></button>
+          <button type="button" class="icon-btn" data-icon="gift" data-label="Gift"><span class="icon-sym">🎁</span><span class="icon-lbl">Gift</span></button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -740,7 +784,8 @@ document.addEventListener('DOMContentLoaded', async () => {
  * Full Edit, Create, Delete, and Priority Manager
  */
 
-let appConfig = null;
+const DEFAULT_CONFIG = ${JSON.stringify(config, null, 2)};
+let appConfig = DEFAULT_CONFIG;
 let editingRuleIndex = -1; // -1 means creating new rule
 
 const hexMap = {
@@ -756,11 +801,21 @@ const hexMap = {
 
 async function loadConfig() {
   try {
-    appConfig = await browser.runtime.sendMessage({ action: 'GET_CONFIG' });
-    renderRules();
+    const data = await browser.storage.local.get(['tabChromaConfig']);
+    if (data && data.tabChromaConfig && data.tabChromaConfig.rules) {
+      appConfig = data.tabChromaConfig;
+    } else {
+      const response = await browser.runtime.sendMessage({ action: 'GET_CONFIG' });
+      if (response && response.rules) {
+        appConfig = response;
+      }
+    }
   } catch (e) {
-    console.error('Failed to load rules:', e);
+    console.warn('[TabChroma] Fallback to embedded rules:', e);
   }
+  if (!appConfig) appConfig = DEFAULT_CONFIG;
+  if (!appConfig.rules) appConfig.rules = [];
+  renderRules();
 }
 
 function renderRules() {
@@ -870,7 +925,8 @@ function renderRules() {
 
     // 6. Container
     const tdContainer = document.createElement('td');
-    tdContainer.textContent = rule.containerName || '-';
+    const sym = iconSymbols[rule.firefoxContainerIcon || 'circle'] || '●';
+    tdContainer.textContent = sym + ' ' + (rule.containerName || '-');
     tr.appendChild(tdContainer);
 
     // 7. Status
@@ -925,12 +981,38 @@ function renderRules() {
 }
 
 async function saveConfigToStorage() {
-  await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
+  try {
+    await browser.storage.local.set({ tabChromaConfig: appConfig });
+  } catch (e) {}
+  try {
+    await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
+  } catch (e) {}
 }
 
 // Modal handling
 let selectedColorName = 'red';
 let selectedColorHex = '#ff4f5e';
+let selectedIcon = 'circle';
+
+const iconSymbols = {
+  circle: '●', briefcase: '💼', fingerprint: '🔒', dollar: '💰', cart: '🛒',
+  tree: '🌲', chill: '☕', vacation: '🏖️', food: '🍔', fruit: '🍎', pet: '🐾', gift: '🎁'
+};
+
+function updateIconButtons() {
+  document.querySelectorAll('.icon-btn').forEach((btn) => {
+    if (btn.getAttribute('data-icon') === selectedIcon) {
+      btn.classList.add('selected');
+    } else {
+      btn.classList.remove('selected');
+    }
+  });
+  const lbl = document.getElementById('icon-selected-label');
+  if (lbl) {
+    const sym = iconSymbols[selectedIcon] || '●';
+    lbl.textContent = sym + ' ' + selectedIcon.charAt(0).toUpperCase() + selectedIcon.slice(1);
+  }
+}
 
 function openModal(index) {
   editingRuleIndex = index;
@@ -955,8 +1037,9 @@ function openModal(index) {
     inpHex.value = rule.color || '#ff4f5e';
     selectedColorName = rule.firefoxContainerColor || 'red';
     selectedColorHex = rule.color || '#ff4f5e';
+    selectedIcon = rule.firefoxContainerIcon || 'circle';
+    inpIcon.value = selectedIcon;
     inpContainerName.value = rule.containerName || rule.name || '';
-    inpIcon.value = rule.firefoxContainerIcon || 'circle';
     inpMode.value = rule.colorMode || 'hybrid';
     inpTopBar.checked = rule.accentBorder !== false;
     inpEnabled.checked = rule.enabled !== false;
@@ -968,14 +1051,16 @@ function openModal(index) {
     inpHex.value = '#37adff';
     selectedColorName = 'blue';
     selectedColorHex = '#37adff';
+    selectedIcon = 'circle';
+    inpIcon.value = selectedIcon;
     inpContainerName.value = '';
-    inpIcon.value = 'circle';
     inpMode.value = 'hybrid';
     inpTopBar.checked = true;
     inpEnabled.checked = true;
   }
 
   updateColorButtons();
+  updateIconButtons();
   updatePreview();
   overlay.classList.add('active');
 }
@@ -1000,9 +1085,20 @@ function updatePreview() {
   const inpName = document.getElementById('inp-name');
   const previewTab = document.getElementById('preview-tab-elem');
   const previewText = document.getElementById('preview-name-text');
-  previewText.textContent = inpName.value || 'Tab Preview';
+  const sym = iconSymbols[selectedIcon] || '🦊';
+  previewText.textContent = sym + ' ' + (inpName.value || 'Tab Preview');
   previewTab.style.borderTopColor = selectedColorHex;
 }
+
+// Modal Icon buttons listener
+document.querySelectorAll('.icon-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    selectedIcon = btn.getAttribute('data-icon') || 'circle';
+    document.getElementById('inp-icon').value = selectedIcon;
+    updateIconButtons();
+    updatePreview();
+  });
+});
 
 // Modal Color options click listener
 document.querySelectorAll('.color-opt').forEach((btn) => {
@@ -1025,7 +1121,8 @@ document.getElementById('inp-name').addEventListener('input', updatePreview);
 document.getElementById('inp-type').addEventListener('change', (e) => {
   const hint = document.getElementById('pattern-hint');
   const val = e.target.value;
-  if (val === 'domain') hint.textContent = 'Matches exact host and subdomains (e.g. github.com matches repo.github.com).';
+  if (val === 'domain') hint.textContent = 'Matches exact domain and all subdomains (e.g. whomsann.de matches 248924.4.whomsann.de).';
+  else if (val === 'exact_host') hint.textContent = 'Matches ONLY this exact host/subdomain (e.g. 248924.4.whomsann.de). Subdomains are isolated!';
   else if (val === 'wildcard') hint.textContent = 'Supports * for multiple characters and ? for single character (e.g. *.staging.com/*).';
   else if (val === 'prefix') hint.textContent = 'Matches any URL beginning with this exact text prefix.';
   else if (val === 'regex') hint.textContent = 'JavaScript regular expression (case-insensitive).';
