@@ -101,13 +101,11 @@ export default function App() {
   };
 
   const handleResetToDummyDefaults = () => {
-    if (confirm('Alle Regeln auf die sauberen Standard-Dummy-Regeln zurücksetzen? Eventuell vorhandene alte Cloud/Azure-Regeln werden gelöscht.')) {
-      setConfig((prev) => ({
-        ...prev,
-        rules: DUMMY_RULES,
-      }));
-      showToast('Standard-Dummy-Regeln erfolgreich wiederhergestellt!');
-    }
+    setConfig((prev) => ({
+      ...prev,
+      rules: DUMMY_RULES,
+    }));
+    showToast('Standard-Dummy-Regeln erfolgreich wiederhergestellt!');
   };
 
   const handleUpdateRules = (newRules: TabColorRule[]) => {

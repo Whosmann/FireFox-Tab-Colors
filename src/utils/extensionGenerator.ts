@@ -1447,49 +1447,89 @@ document.getElementById('btn-import').addEventListener('click', () => {
         let rawRules = [];
         if (Array.isArray(parsed)) {
           rawRules = parsed;
-        } else if (parsed.rules && Array.isArray(parsed.rules)) {
-          rawRules = parsed.rules;
-          if (parsed.defaultColor) appConfig.defaultColor = parsed.defaultColor;
-          if (parsed.defaultContainerColor) appConfig.defaultContainerColor = parsed.defaultContainerColor;
-          if (parsed.defaultMode) appConfig.defaultMode = parsed.defaultMode;
+        } else if (parsed && typeof parsed === 'object') {
+          if (Array.isArray(parsed.rules)) {
+            rawRules = parsed.rules;
+            if (parsed.defaultColor) appConfig.defaultColor = parsed.defaultColor;
+            if (parsed.defaultContainerColor) appConfig.defaultContainerColor = parsed.defaultContainerColor;
+            if (parsed.defaultMode) appConfig.defaultMode = parsed.defaultMode;
+          } else if (parsed.tabChromaConfig && Array.isArray(parsed.tabChromaConfig.rules)) {
+            rawRules = parsed.tabChromaConfig.rules;
+          } else if (parsed.config && Array.isArray(parsed.config.rules)) {
+            rawRules = parsed.config.rules;
+          } else if (Array.isArray(parsed.data)) {
+            rawRules = parsed.data;
+          } else if (parsed.pattern || parsed.url || parsed.host || parsed.name) {
+            rawRules = [parsed];
+          } else {
+            alert('Die JSON-Datei enthält keine gültigen Regeln.');
+            return;
+          }
         } else {
-          alert('Invalid JSON file.');
+          alert('Ungültiges JSON-Format.');
           return;
         }
-
-        // Exclude any azure or proprietary cloud rule
-        const sanitized = rawRules.filter((r) => {
-          const n = String(r.name || '').toLowerCase();
-          const p = String(r.pattern || '').toLowerCase();
-          const c = String(r.containerName || '').toLowerCase();
-          return !n.includes('azure') && !p.includes('azure') && !c.includes('azure');
-        });
 
         const defColor = appConfig.defaultColor || '#37adff';
         const defContainer = appConfig.defaultContainerColor || 'blue';
         const defMode = appConfig.defaultMode || 'container';
 
-        appConfig.rules = sanitized.map((r, i) => ({
-          id: r.id || 'rule-' + Date.now() + '-' + i,
-          name: r.name || 'Rule ' + (i + 1),
-          patternType: r.patternType || 'domain',
-          pattern: r.pattern || '',
-          color: r.color || defColor,
-          firefoxContainerColor: r.firefoxContainerColor || defContainer,
-          firefoxContainerIcon: r.firefoxContainerIcon || 'circle',
-          customEmoji: r.customEmoji || '',
-          enableTitleEmoji: r.enableTitleEmoji !== false,
-          enableFaviconEmoji: r.enableFaviconEmoji !== false,
-          containerName: r.containerName || r.name || 'Container',
-          colorMode: r.colorMode || defMode,
-          accentBorder: r.accentBorder !== false,
-          enabled: r.enabled !== false,
-          priority: i + 1,
-        }));
+        // Deduplicate imported rules by distinct (patternType, pattern)
+        const distinctImported = new Map();
+        rawRules.forEach((r, i) => {
+          const pat = String(r.pattern || r.url || r.host || '').trim();
+          const pType = (r.patternType || 'domain').toLowerCase().trim();
+          const key = pType + '::' + pat.toLowerCase();
+          if (!distinctImported.has(key)) {
+            distinctImported.set(key, { ...r, pattern: pat, patternType: pType });
+          }
+        });
+
+        // Merge with existing rules based on distinct (patternType, pattern)
+        const currentList = Array.isArray(appConfig.rules) ? [...appConfig.rules] : [];
+        let updatedCount = 0;
+        let newCount = 0;
+
+        distinctImported.forEach((imp, key) => {
+          const existingIdx = currentList.findIndex((ex) => {
+            const exKey = (ex.patternType || 'domain').toLowerCase().trim() + '::' + (ex.pattern || '').toLowerCase().trim();
+            return exKey === key;
+          });
+
+          const nm = String(imp.name || imp.title || imp.pattern || ('Rule ' + (currentList.length + 1))).trim();
+          const formatted = {
+            id: imp.id || 'rule-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            name: nm,
+            patternType: imp.patternType || 'domain',
+            pattern: imp.pattern,
+            color: imp.color || defColor,
+            firefoxContainerColor: imp.firefoxContainerColor || defContainer,
+            firefoxContainerIcon: imp.firefoxContainerIcon || 'circle',
+            customEmoji: imp.customEmoji || '',
+            enableTitleEmoji: imp.enableTitleEmoji !== false,
+            enableFaviconEmoji: imp.enableFaviconEmoji !== false,
+            containerName: imp.containerName || nm || 'Container',
+            colorMode: imp.colorMode || defMode,
+            accentBorder: imp.accentBorder !== false,
+            enabled: imp.enabled !== false,
+            priority: 0,
+          };
+
+          if (existingIdx >= 0) {
+            formatted.id = currentList[existingIdx].id;
+            currentList[existingIdx] = formatted;
+            updatedCount++;
+          } else {
+            currentList.push(formatted);
+            newCount++;
+          }
+        });
+
+        appConfig.rules = currentList.map((r, i) => ({ ...r, priority: i + 1 }));
 
         await saveConfigToStorage();
         renderRules();
-        alert('Rules imported successfully (' + appConfig.rules.length + ' rules)!');
+        alert('Import abgeschlossen: ' + newCount + ' neu hinzugefügt, ' + updatedCount + ' bestehende Regeln aktualisiert!');
       } catch (err) {
         alert('Invalid JSON file.');
       }

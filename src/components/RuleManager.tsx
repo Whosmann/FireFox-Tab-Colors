@@ -11,10 +11,12 @@ import {
   Sparkles,
   Search,
   Check,
-  RotateCcw
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import { TabColorRule, FirefoxContainerColor, ColorMode } from '../types/extension';
 import { PRESET_PACKS } from '../utils/presetRules';
+import { ImportRulesModal, DuplicateConflictStrategy, getRuleKey } from './ImportRulesModal';
 
 interface RuleManagerProps {
   rules: TabColorRule[];
@@ -39,6 +41,8 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // Filter rules by query
   const filteredRules = rules.filter(
@@ -81,14 +85,16 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
 
   const handleDeleteRule = (id: string) => {
     const target = rules.find((r) => r.id === id);
-    const label = target?.name || target?.pattern || 'diese Regel';
-    if (confirm(`Regel "${label}" wirklich entfernen?`)) {
-      const newRules = rules.filter((r) => r.id !== id);
-      newRules.forEach((r, idx) => {
-        r.priority = idx + 1;
-      });
-      onUpdateRules(newRules);
-    }
+    const label = target?.name || target?.pattern || 'Regel';
+    const newRules = rules.filter((r) => r.id !== id);
+    newRules.forEach((r, idx) => {
+      r.priority = idx + 1;
+    });
+    onUpdateRules(newRules);
+    setNotification({
+      type: 'info',
+      text: `Regel "${label}" wurde entfernt.`,
+    });
   };
 
   const handleRemoveRuleEmoji = (id: string) => {
@@ -105,24 +111,34 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
       };
     });
     onUpdateRules(updated);
+    setNotification({
+      type: 'info',
+      text: 'Tab-Symbol wurde aus der Regel entfernt.',
+    });
   };
 
   const handleDuplicateRule = (rule: TabColorRule) => {
     const duplicated: TabColorRule = {
       ...rule,
       id: `rule-${Date.now()}`,
-      name: `${rule.name} (Copy)`,
+      name: `${rule.name} (Kopie)`,
       priority: rules.length + 1,
     };
     onUpdateRules([...rules, duplicated]);
+    setNotification({
+      type: 'success',
+      text: `Regel "${rule.name}" wurde dupliziert.`,
+    });
   };
 
   const handleLoadPreset = (packId: string) => {
     const pack = PRESET_PACKS.find((p) => p.id === packId);
     if (!pack) return;
-    if (confirm(`Preset-Pack "${pack.name}" laden? Dies ersetzt die aktuellen Regeln durch ${pack.rules.length} Beispiel-Regeln.`)) {
-      onUpdateRules(pack.rules);
-    }
+    onUpdateRules(pack.rules);
+    setNotification({
+      type: 'success',
+      text: `Preset-Pack "${pack.name}" mit ${pack.rules.length} Beispiel-Regeln geladen!`,
+    });
   };
 
   const handleExportJson = () => {
@@ -133,64 +149,67 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    setNotification({
+      type: 'success',
+      text: `${rules.length} Regeln als tabchroma-rules.json exportiert.`,
+    });
   };
 
-  const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target?.result as string);
-        let rawRules: any[] = [];
-        if (Array.isArray(parsed)) {
-          rawRules = parsed;
-        } else if (parsed && Array.isArray(parsed.rules)) {
-          rawRules = parsed.rules;
-        } else {
-          alert('Ungültige Struktur: Datei enthält keine Regeln.');
-          return;
-        }
+  const handleImportRules = (
+    importedRules: TabColorRule[],
+    strategy: DuplicateConflictStrategy,
+    stats: { newCount: number; updatedCount: number; skippedCount: number; totalImported: number }
+  ) => {
+    let finalRules: TabColorRule[] = [];
 
-        // Strictly filter out any rule referencing azure (im default darf kein azure auftauchen)
-        const sanitized = rawRules.filter((r) => {
-          const name = String(r.name || '').toLowerCase();
-          const pattern = String(r.pattern || '').toLowerCase();
-          const container = String(r.containerName || '').toLowerCase();
-          return !name.includes('azure') && !pattern.includes('azure') && !container.includes('azure');
-        });
+    if (strategy === 'replace_all') {
+      finalRules = importedRules.map((r, idx) => ({ ...r, priority: idx + 1 }));
+      setNotification({
+        type: 'success',
+        text: `✓ ${finalRules.length} Regeln erfolgreich importiert (vorherige Regeln ersetzt).`,
+      });
+    } else {
+      // Distinct merge based on (patternType, pattern)
+      const resultList: TabColorRule[] = [...rules];
 
-        // Prompt user: Apply standard default color scheme to imported rules?
-        const applyDefaults = confirm(
-          `Möchten Sie das konfigurierte Standard-Farbschema (Farbe: ${defaultColor}, Container: ${defaultContainerColor}, Modus: ${defaultMode}) als Default auf alle ${sanitized.length} importierten Regeln anwenden?\n\n[OK] = Standard-Farbschema auf alle Regeln anwenden\n[Abbrechen] = Farben aus der Datei beibehalten (und nur fehlende Werte mit Default auffüllen)`
+      importedRules.forEach((imp) => {
+        const key = getRuleKey(imp.patternType, imp.pattern);
+        const existingIdx = resultList.findIndex(
+          (r) => getRuleKey(r.patternType, r.pattern) === key
         );
 
-        const processed: TabColorRule[] = sanitized.map((r, idx) => ({
-          id: r.id || `rule-${Date.now()}-${idx}`,
-          name: r.name || `Importierte Regel ${idx + 1}`,
-          patternType: r.patternType || 'domain',
-          pattern: r.pattern || '',
-          color: applyDefaults ? defaultColor : (r.color || defaultColor),
-          firefoxContainerColor: applyDefaults ? defaultContainerColor : (r.firefoxContainerColor || defaultContainerColor),
-          firefoxContainerIcon: r.firefoxContainerIcon || 'circle',
-          customEmoji: r.customEmoji || '',
-          enableTitleEmoji: r.enableTitleEmoji ?? true,
-          enableFaviconEmoji: r.enableFaviconEmoji ?? true,
-          containerName: r.containerName || r.name || 'Container',
-          colorMode: applyDefaults ? defaultMode : (r.colorMode || defaultMode),
-          accentBorder: r.accentBorder ?? true,
-          enabled: r.enabled ?? true,
-          priority: idx + 1,
-        }));
+        if (existingIdx >= 0) {
+          if (strategy === 'update_conflicts') {
+            // Update existing rule: preserve original rule ID and priority, update configuration
+            resultList[existingIdx] = {
+              ...imp,
+              id: resultList[existingIdx].id,
+              priority: resultList[existingIdx].priority,
+            };
+          }
+          // If 'keep_existing', keep existing rule without changes
+        } else {
+          // New rule: append to list
+          resultList.push(imp);
+        }
+      });
 
-        onUpdateRules(processed);
-        alert(`${processed.length} Regeln erfolgreich importiert!`);
-      } catch (err) {
-        alert('Fehler beim Einlesen der JSON-Datei.');
+      finalRules = resultList.map((r, idx) => ({ ...r, priority: idx + 1 }));
+
+      if (strategy === 'update_conflicts') {
+        setNotification({
+          type: 'success',
+          text: `✓ Import abgeschlossen: ${stats.newCount} neue Regeln hinzugefügt, ${stats.updatedCount} bestehende Regeln aktualisiert (gesamt: ${finalRules.length} Regeln).`,
+        });
+      } else {
+        setNotification({
+          type: 'success',
+          text: `✓ Import abgeschlossen: ${stats.newCount} neue Regeln hinzugefügt, ${stats.skippedCount} bestehende Regeln beibehalten (gesamt: ${finalRules.length} Regeln).`,
+        });
       }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    }
+
+    onUpdateRules(finalRules);
   };
 
   return (
@@ -210,27 +229,10 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Preset pack dropdown */}
-          <div className="relative inline-block text-xs">
-            <button
-              onClick={() => {
-                const nextId = prompt(
-                  'Wählen Sie ein Dummy-Preset zum Laden:\n1 = Standard Dummy Rules (Beispiel-Regeln)\n2 = Farbcodierte Muster (Farben-Demo)'
-                );
-                if (nextId === '1') handleLoadPreset('dummy-standard');
-                if (nextId === '2') handleLoadPreset('dummy-colors');
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Dummy-Presets</span>
-            </button>
-          </div>
-
           {onResetToDummyDefaults && (
             <button
               onClick={onResetToDummyDefaults}
-              title="Setzt alle Regeln auf die sauberen Standard-Dummy-Regeln zurück (ohne Cloud/Azure)"
+              title="Setzt alle Regeln auf die sauberen Standard-Dummy-Regeln zurück"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5 text-sky-600" />
@@ -238,11 +240,15 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
             </button>
           )}
 
-          <label className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer" title="Importiert Regeln und bietet an, das Standard-Farbschema als Default zu verwenden">
-            <Upload className="w-3.5 h-3.5" />
+          <button
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
+            title="Öffnet das Import-Fenster für JSON-Dateien oder direkte Texteingabe"
+          >
+            <Upload className="w-3.5 h-3.5 text-sky-600" />
             <span>Import JSON</span>
-            <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
-          </label>
+          </button>
 
           <button
             onClick={handleExportJson}
@@ -261,6 +267,36 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Notification Banner */}
+      {notification && (
+        <div
+          className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 transition-all ${
+            notification.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : notification.type === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-900'
+              : 'bg-sky-50 border-sky-200 text-sky-900'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {notification.type === 'success' ? (
+              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : notification.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-sky-600 shrink-0" />
+            )}
+            <span className="font-medium">{notification.text}</span>
+          </div>
+          <button
+            onClick={() => setNotification(null)}
+            className="text-slate-400 hover:text-slate-700 text-xs px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Search and Preset Quick Pills */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -491,6 +527,18 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Modal for importing rules */}
+      <ImportRulesModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImport={handleImportRules}
+        defaultColor={defaultColor}
+        defaultContainerColor={defaultContainerColor}
+        defaultMode={defaultMode}
+        currentRuleCount={rules.length}
+        existingRules={rules}
+      />
     </div>
   );
 };
