@@ -142,7 +142,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
             </span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Rules are evaluated from top to bottom. The first rule matching the browser URL determines the tab color.
+            Rules are evaluated from top to bottom. Click the <strong>Edit</strong> button or click on any rule name to modify its URL pattern, color, or container.
           </p>
         </div>
 
@@ -284,9 +284,16 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                         </div>
                       </td>
 
-                      {/* Rule Name */}
-                      <td className="py-2.5 px-3 font-semibold text-slate-900">
-                        {rule.name}
+                      {/* Rule Name (Clickable to edit) */}
+                      <td
+                        onClick={() => onEditRule(rule)}
+                        className="py-2.5 px-3 font-semibold text-slate-900 cursor-pointer hover:text-sky-600 transition-colors"
+                        title="Click to edit this rule"
+                      >
+                        <div className="flex items-center gap-1.5 group">
+                          <span>{rule.name}</span>
+                          <Edit3 className="w-3 h-3 opacity-0 group-hover:opacity-100 text-sky-500 transition-opacity" />
+                        </div>
                       </td>
 
                       {/* Type Badge */}
@@ -297,8 +304,12 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                       </td>
 
                       {/* URL Pattern */}
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-sky-800 max-w-xs truncate" title={rule.pattern}>
-                        <code className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100">
+                      <td
+                        onClick={() => onEditRule(rule)}
+                        className="py-2.5 px-3 font-mono text-[11px] text-sky-800 max-w-xs truncate cursor-pointer hover:text-sky-900"
+                        title="Click to edit pattern"
+                      >
+                        <code className="bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100 hover:bg-sky-100 transition-colors">
                           {rule.pattern}
                         </code>
                       </td>
@@ -327,15 +338,16 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                         </button>
                       </td>
 
-                      {/* Actions */}
+                      {/* Actions: Prominent Edit button */}
                       <td className="py-2.5 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => onEditRule(rule)}
-                            className="p-1 rounded text-slate-500 hover:text-sky-600 hover:bg-sky-50 transition-colors"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-sky-50 text-sky-700 hover:bg-sky-100 font-semibold text-xs border border-sky-200 transition-colors shadow-2xs"
                             title="Edit rule"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
                           </button>
                           <button
                             onClick={() => handleDuplicateRule(rule)}

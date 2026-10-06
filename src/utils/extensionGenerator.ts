@@ -539,22 +539,47 @@ document.addEventListener('DOMContentLoaded', async () => {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: #0b0f19; color: #f8fafc; padding: 28px; line-height: 1.5; }
-    .container { max-width: 960px; margin: 0 auto; }
-    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 24px; }
+    .container { max-width: 1040px; margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
     h1 { font-size: 20px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
     .desc { font-size: 13px; color: #94a3b8; margin-top: 4px; }
-    .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
+    .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
     .btn-primary { background: #0284c7; color: white; }
     .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
     .btn:hover { opacity: 0.9; }
+    .actions-bar { display: flex; gap: 10px; }
     table { width: 100%; border-collapse: collapse; margin-top: 16px; background: #111827; border-radius: 8px; overflow: hidden; border: 1px solid #1f2937; }
-    th { text-align: left; padding: 12px 16px; font-size: 12px; text-transform: uppercase; color: #6b7280; background: #1f2937; }
-    td { padding: 12px 16px; border-top: 1px solid #1f2937; font-size: 13px; vertical-align: middle; }
+    th { text-align: left; padding: 12px 14px; font-size: 11px; text-transform: uppercase; color: #94a3b8; background: #1f2937; letter-spacing: 0.05em; }
+    td { padding: 12px 14px; border-top: 1px solid #1f2937; font-size: 13px; vertical-align: middle; }
     .color-swatch { width: 16px; height: 16px; border-radius: 4px; display: inline-block; vertical-align: middle; margin-right: 8px; }
-    .pattern-code { font-family: monospace; background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #38bdf8; }
-    .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #374151; color: #d1d5db; }
-    .actions-bar { display: flex; gap: 10px; margin-bottom: 16px; }
-    .del-btn { background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; border: none; cursor: pointer; }
+    .pattern-code { font-family: monospace; background: #1e293b; padding: 3px 7px; border-radius: 4px; font-size: 12px; color: #38bdf8; word-break: break-all; }
+    .badge { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: #374151; color: #d1d5db; font-family: monospace; }
+    .btn-cell { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+    .edit-btn { background: #0284c7; color: white; padding: 5px 12px; border-radius: 5px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; }
+    .del-btn { background: #ef4444; color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; }
+    .priority-btn { background: #1f2937; color: #94a3b8; border: 1px solid #374151; border-radius: 4px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .priority-btn:hover { color: #fff; background: #374151; }
+    .edit-btn:hover, .del-btn:hover { opacity: 0.85; }
+
+    /* Modal Styles */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(2px); }
+    .modal-overlay.active { display: flex; }
+    .modal { background: #111827; border: 1px solid #374151; border-radius: 12px; width: 100%; max-width: 580px; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 12px; margin-bottom: 18px; }
+    .modal-title { font-size: 17px; font-weight: 700; color: #f8fafc; }
+    .close-btn { background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; line-height: 1; }
+    .close-btn:hover { color: #fff; }
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 5px; }
+    .form-input, .form-select { width: 100%; padding: 8px 12px; background: #1e293b; border: 1px solid #374151; border-radius: 6px; color: #f8fafc; font-size: 13px; outline: none; }
+    .form-input:focus, .form-select:focus { border-color: #38bdf8; }
+    .form-hint { font-size: 11px; color: #64748b; margin-top: 4px; }
+    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; margin-bottom: 8px; }
+    .color-opt { height: 32px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+    .color-opt.selected { border-color: #fff; box-shadow: 0 0 0 2px #38bdf8; }
+    .preview-box { background: #1e293b; border-radius: 8px; padding: 12px; margin-top: 14px; border: 1px solid #334155; }
+    .preview-tab { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 6px 6px 0 0; background: #0f172a; color: #fff; font-size: 12px; font-weight: 600; border-top: 3px solid #ff4f5e; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 14px; border-top: 1px solid #1f2937; }
   </style>
 </head>
 <body>
@@ -562,7 +587,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     <header>
       <div>
         <h1>TabChroma Rules Configuration</h1>
-        <div class="desc">Define which URLs should get which Firefox tab color and container identity.</div>
+        <div class="desc">Define and edit which URLs should get which Firefox tab color and container identity.</div>
       </div>
       <div class="actions-bar">
         <button id="btn-export" class="btn btn-secondary">Export JSON</button>
@@ -574,19 +599,128 @@ document.addEventListener('DOMContentLoaded', async () => {
     <table id="rules-table">
       <thead>
         <tr>
+          <th style="width: 70px;">Priority</th>
           <th>Color</th>
           <th>Rule Name</th>
           <th>Match Type</th>
           <th>Pattern</th>
           <th>Container</th>
           <th>Status</th>
-          <th>Action</th>
+          <th style="text-align: right;">Action</th>
         </tr>
       </thead>
       <tbody id="rules-body">
         <!-- Rendered by options.js -->
       </tbody>
     </table>
+  </div>
+
+  <!-- Rule Edit & Create Modal -->
+  <div id="modal-overlay" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-title" class="modal-title">Edit Tab Color Rule</h2>
+        <button id="modal-close" class="close-btn">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="inp-name">Rule Name / Label</label>
+        <input type="text" id="inp-name" class="form-input" placeholder="e.g. AWS Production Console, GitHub">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="inp-type">Match Type</label>
+        <select id="inp-type" class="form-select">
+          <option value="domain">Domain (e.g. github.com, aws.amazon.com)</option>
+          <option value="wildcard">Wildcard (e.g. *.staging.com/*, localhost:*)</option>
+          <option value="prefix">Prefix (e.g. https://console.aws.amazon.com/)</option>
+          <option value="regex">Regular Expression (e.g. ^https?:\/\/(prod|live)\..*)</option>
+          <option value="exact">Exact URL (Full address equality)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="inp-pattern">URL Pattern</label>
+        <input type="text" id="inp-pattern" class="form-input" style="font-family: monospace;" placeholder="e.g. github.com or *.staging.internal/*">
+        <div id="pattern-hint" class="form-hint">Matches exact domain and any subdomains.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Firefox Container Color</label>
+        <div class="color-grid" id="color-grid">
+          <button type="button" class="color-opt" data-color="blue" data-hex="#37adff" style="background:#37adff;">Blue</button>
+          <button type="button" class="color-opt" data-color="turquoise" data-hex="#00c79a" style="background:#00c79a;">Turquoise</button>
+          <button type="button" class="color-opt" data-color="green" data-hex="#51cf66" style="background:#51cf66;">Green</button>
+          <button type="button" class="color-opt" data-color="yellow" data-hex="#ffcb00" style="background:#ffcb00; color:#000;">Yellow</button>
+          <button type="button" class="color-opt" data-color="orange" data-hex="#ff9400" style="background:#ff9400;">Orange</button>
+          <button type="button" class="color-opt" data-color="red" data-hex="#ff4f5e" style="background:#ff4f5e;">Red</button>
+          <button type="button" class="color-opt" data-color="pink" data-hex="#ff4ba0" style="background:#ff4ba0;">Pink</button>
+          <button type="button" class="color-opt" data-color="purple" data-hex="#9059ff" style="background:#9059ff;">Purple</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+          <span style="font-size:12px; color:#94a3b8;">Custom Hex:</span>
+          <input type="text" id="inp-hex" class="form-input" style="width:100px; font-family:monospace;" value="#ff4f5e">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="inp-container-name">Container Name</label>
+        <input type="text" id="inp-container-name" class="form-input" placeholder="e.g. Production [Red], Work">
+        <div class="form-hint">Displayed in the Firefox address bar container pill.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="inp-icon">Container Icon</label>
+        <select id="inp-icon" class="form-select">
+          <option value="circle">● Circle</option>
+          <option value="briefcase">💼 Briefcase</option>
+          <option value="fingerprint">🔒 Fingerprint / Security</option>
+          <option value="dollar">💰 Dollar / Finance</option>
+          <option value="cart">🛒 Cart / Shopping</option>
+          <option value="tree">🌲 Tree / Nature</option>
+          <option value="chill">☕ Chill / Leisure</option>
+          <option value="vacation">🏖️ Vacation</option>
+          <option value="food">🍔 Food</option>
+          <option value="pet">🐾 Pet</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="inp-mode">Coloring Mode</label>
+        <select id="inp-mode" class="form-select">
+          <option value="hybrid">Hybrid (Container Tab Stripe + Dynamic Window Theme)</option>
+          <option value="container">Container Tab Only (Native stripe and cookie isolation)</option>
+          <option value="theme">Active Theme Only (Tints browser tab bar when active)</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="inp-topbar" checked style="cursor:pointer;">
+        <label for="inp-topbar" style="font-size:12px; color:#cbd5e1; cursor:pointer;">
+          Show 3px colored accent stripe across the top of matching web pages
+        </label>
+      </div>
+
+      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="inp-enabled" checked style="cursor:pointer;">
+        <label for="inp-enabled" style="font-size:12px; color:#cbd5e1; cursor:pointer;">
+          Enable this rule
+        </label>
+      </div>
+
+      <div class="preview-box">
+        <div style="font-size:11px; text-transform:uppercase; color:#94a3b8; font-weight:700; margin-bottom:8px;">Tab Preview</div>
+        <div id="preview-tab-elem" class="preview-tab">
+          <span>🦊</span>
+          <span id="preview-name-text">Rule Name</span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="modal-save" class="btn btn-primary">Save Rule</button>
+      </div>
+    </div>
   </div>
 
   <script src="options.js"></script>
@@ -603,9 +737,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 7. options.js
   const optionsJs = `/**
  * TabChroma - Options Page Script
+ * Full Edit, Create, Delete, and Priority Manager
  */
 
 let appConfig = null;
+let editingRuleIndex = -1; // -1 means creating new rule
+
+const hexMap = {
+  blue: '#37adff',
+  turquoise: '#00c79a',
+  green: '#51cf66',
+  yellow: '#ffcb00',
+  orange: '#ff9400',
+  red: '#ff4f5e',
+  pink: '#ff4ba0',
+  purple: '#9059ff',
+};
 
 async function loadConfig() {
   try {
@@ -625,9 +772,9 @@ function renderRules() {
   if (!appConfig || !appConfig.rules || appConfig.rules.length === 0) {
     const emptyTr = document.createElement('tr');
     const emptyTd = document.createElement('td');
-    emptyTd.colSpan = 7;
+    emptyTd.colSpan = 8;
     emptyTd.style.textAlign = 'center';
-    emptyTd.style.padding = '32px';
+    emptyTd.style.padding = '36px';
     emptyTd.style.color = '#64748b';
     emptyTd.textContent = 'No rules configured. Click "+ Add New Rule" to create one.';
     emptyTr.appendChild(emptyTd);
@@ -638,6 +785,56 @@ function renderRules() {
   appConfig.rules.forEach((rule, idx) => {
     const tr = document.createElement('tr');
 
+    // 1. Priority controls
+    const tdPriority = document.createElement('td');
+    const pContainer = document.createElement('div');
+    pContainer.style.display = 'flex';
+    pContainer.style.alignItems = 'center';
+    pContainer.style.gap = '4px';
+
+    const pNum = document.createElement('span');
+    pNum.style.fontFamily = 'monospace';
+    pNum.style.color = '#94a3b8';
+    pNum.style.marginRight = '4px';
+    pNum.textContent = String(idx + 1);
+    pContainer.appendChild(pNum);
+
+    if (idx > 0) {
+      const upBtn = document.createElement('button');
+      upBtn.className = 'priority-btn';
+      upBtn.textContent = '▲';
+      upBtn.title = 'Move Up';
+      upBtn.addEventListener('click', async () => {
+        const temp = appConfig.rules[idx];
+        appConfig.rules[idx] = appConfig.rules[idx - 1];
+        appConfig.rules[idx - 1] = temp;
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      });
+      pContainer.appendChild(upBtn);
+    }
+
+    if (idx < appConfig.rules.length - 1) {
+      const downBtn = document.createElement('button');
+      downBtn.className = 'priority-btn';
+      downBtn.textContent = '▼';
+      downBtn.title = 'Move Down';
+      downBtn.addEventListener('click', async () => {
+        const temp = appConfig.rules[idx];
+        appConfig.rules[idx] = appConfig.rules[idx + 1];
+        appConfig.rules[idx + 1] = temp;
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      });
+      pContainer.appendChild(downBtn);
+    }
+
+    tdPriority.appendChild(pContainer);
+    tr.appendChild(tdPriority);
+
+    // 2. Color swatch
     const tdColor = document.createElement('td');
     const swatch = document.createElement('span');
     swatch.className = 'color-swatch';
@@ -646,11 +843,16 @@ function renderRules() {
     tdColor.appendChild(document.createTextNode(rule.firefoxContainerColor || 'blue'));
     tr.appendChild(tdColor);
 
+    // 3. Name (clickable to edit)
     const tdName = document.createElement('td');
     tdName.style.fontWeight = '600';
+    tdName.style.cursor = 'pointer';
+    tdName.title = 'Click to edit rule';
     tdName.textContent = rule.name || '';
+    tdName.addEventListener('click', () => openModal(idx));
     tr.appendChild(tdName);
 
+    // 4. Pattern type badge
     const tdType = document.createElement('td');
     const badge = document.createElement('span');
     badge.className = 'badge';
@@ -658,6 +860,7 @@ function renderRules() {
     tdType.appendChild(badge);
     tr.appendChild(tdType);
 
+    // 5. Pattern code
     const tdPattern = document.createElement('td');
     const code = document.createElement('code');
     code.className = 'pattern-code';
@@ -665,73 +868,231 @@ function renderRules() {
     tdPattern.appendChild(code);
     tr.appendChild(tdPattern);
 
+    // 6. Container
     const tdContainer = document.createElement('td');
     tdContainer.textContent = rule.containerName || '-';
     tr.appendChild(tdContainer);
 
+    // 7. Status
     const tdStatus = document.createElement('td');
-    const statusSpan = document.createElement('span');
+    const statusBtn = document.createElement('span');
+    statusBtn.style.cursor = 'pointer';
     if (rule.enabled) {
-      statusSpan.style.color = '#10b981';
-      statusSpan.textContent = 'Enabled';
+      statusBtn.style.color = '#10b981';
+      statusBtn.textContent = '● Enabled';
     } else {
-      statusSpan.style.color = '#64748b';
-      statusSpan.textContent = 'Disabled';
+      statusBtn.style.color = '#64748b';
+      statusBtn.textContent = '○ Disabled';
     }
-    tdStatus.appendChild(statusSpan);
+    statusBtn.addEventListener('click', async () => {
+      rule.enabled = !rule.enabled;
+      await saveConfigToStorage();
+      renderRules();
+    });
+    tdStatus.appendChild(statusBtn);
     tr.appendChild(tdStatus);
 
+    // 8. Actions (EDIT + DELETE)
     const tdAction = document.createElement('td');
+    tdAction.className = 'btn-cell';
+
+    // Prominent EDIT button
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.title = 'Edit this rule';
+    editBtn.addEventListener('click', () => openModal(idx));
+    tdAction.appendChild(editBtn);
+
+    // DELETE button
     const delBtn = document.createElement('button');
     delBtn.className = 'del-btn';
     delBtn.textContent = 'Delete';
+    delBtn.title = 'Delete this rule';
     delBtn.addEventListener('click', async () => {
-      appConfig.rules.splice(idx, 1);
-      await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
-      renderRules();
+      if (confirm('Delete rule "' + (rule.name || rule.pattern) + '"?')) {
+        appConfig.rules.splice(idx, 1);
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      }
     });
     tdAction.appendChild(delBtn);
-    tr.appendChild(tdAction);
 
+    tr.appendChild(tdAction);
     tbody.appendChild(tr);
   });
 }
 
-document.getElementById('btn-add-rule').addEventListener('click', async () => {
-  const pattern = prompt('Enter URL or Domain pattern (e.g., github.com or *.staging.com/*):');
-  if (!pattern) return;
-  const name = prompt('Enter a label for this rule:', pattern);
-  const color = prompt('Choose color (blue, turquoise, green, yellow, orange, red, pink, purple):', 'blue') || 'blue';
-
-  const hexMap = {
-    blue: '#37adff',
-    turquoise: '#00c79a',
-    green: '#51cf66',
-    yellow: '#ffcb00',
-    orange: '#ff9400',
-    red: '#ff4f5e',
-    pink: '#ff4ba0',
-    purple: '#9059ff',
-  };
-
-  const newRule = {
-    id: 'rule-' + Date.now(),
-    name: name || pattern,
-    patternType: pattern.includes('*') ? 'wildcard' : 'domain',
-    pattern,
-    color: hexMap[color] || '#37adff',
-    firefoxContainerColor: color,
-    firefoxContainerIcon: 'circle',
-    containerName: name || pattern,
-    colorMode: 'hybrid',
-    accentBorder: true,
-    enabled: true,
-    priority: (appConfig.rules?.length || 0) + 1,
-  };
-
-  appConfig.rules = [...(appConfig.rules || []), newRule];
+async function saveConfigToStorage() {
   await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
+}
+
+// Modal handling
+let selectedColorName = 'red';
+let selectedColorHex = '#ff4f5e';
+
+function openModal(index) {
+  editingRuleIndex = index;
+  const overlay = document.getElementById('modal-overlay');
+  const title = document.getElementById('modal-title');
+  const inpName = document.getElementById('inp-name');
+  const inpType = document.getElementById('inp-type');
+  const inpPattern = document.getElementById('inp-pattern');
+  const inpHex = document.getElementById('inp-hex');
+  const inpContainerName = document.getElementById('inp-container-name');
+  const inpIcon = document.getElementById('inp-icon');
+  const inpMode = document.getElementById('inp-mode');
+  const inpTopBar = document.getElementById('inp-topbar');
+  const inpEnabled = document.getElementById('inp-enabled');
+
+  if (index >= 0) {
+    const rule = appConfig.rules[index];
+    title.textContent = 'Edit Rule: ' + (rule.name || rule.pattern);
+    inpName.value = rule.name || '';
+    inpType.value = rule.patternType || 'domain';
+    inpPattern.value = rule.pattern || '';
+    inpHex.value = rule.color || '#ff4f5e';
+    selectedColorName = rule.firefoxContainerColor || 'red';
+    selectedColorHex = rule.color || '#ff4f5e';
+    inpContainerName.value = rule.containerName || rule.name || '';
+    inpIcon.value = rule.firefoxContainerIcon || 'circle';
+    inpMode.value = rule.colorMode || 'hybrid';
+    inpTopBar.checked = rule.accentBorder !== false;
+    inpEnabled.checked = rule.enabled !== false;
+  } else {
+    title.textContent = 'Create New Tab Color Rule';
+    inpName.value = '';
+    inpType.value = 'domain';
+    inpPattern.value = '';
+    inpHex.value = '#37adff';
+    selectedColorName = 'blue';
+    selectedColorHex = '#37adff';
+    inpContainerName.value = '';
+    inpIcon.value = 'circle';
+    inpMode.value = 'hybrid';
+    inpTopBar.checked = true;
+    inpEnabled.checked = true;
+  }
+
+  updateColorButtons();
+  updatePreview();
+  overlay.classList.add('active');
+}
+
+function closeModal() {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.classList.remove('active');
+  editingRuleIndex = -1;
+}
+
+function updateColorButtons() {
+  document.querySelectorAll('.color-opt').forEach((btn) => {
+    if (btn.getAttribute('data-color') === selectedColorName) {
+      btn.classList.add('selected');
+    } else {
+      btn.classList.remove('selected');
+    }
+  });
+}
+
+function updatePreview() {
+  const inpName = document.getElementById('inp-name');
+  const previewTab = document.getElementById('preview-tab-elem');
+  const previewText = document.getElementById('preview-name-text');
+  previewText.textContent = inpName.value || 'Tab Preview';
+  previewTab.style.borderTopColor = selectedColorHex;
+}
+
+// Modal Color options click listener
+document.querySelectorAll('.color-opt').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    selectedColorName = btn.getAttribute('data-color');
+    selectedColorHex = btn.getAttribute('data-hex') || hexMap[selectedColorName] || '#37adff';
+    document.getElementById('inp-hex').value = selectedColorHex;
+    updateColorButtons();
+    updatePreview();
+  });
+});
+
+document.getElementById('inp-hex').addEventListener('input', (e) => {
+  selectedColorHex = e.target.value;
+  updatePreview();
+});
+
+document.getElementById('inp-name').addEventListener('input', updatePreview);
+
+document.getElementById('inp-type').addEventListener('change', (e) => {
+  const hint = document.getElementById('pattern-hint');
+  const val = e.target.value;
+  if (val === 'domain') hint.textContent = 'Matches exact host and subdomains (e.g. github.com matches repo.github.com).';
+  else if (val === 'wildcard') hint.textContent = 'Supports * for multiple characters and ? for single character (e.g. *.staging.com/*).';
+  else if (val === 'prefix') hint.textContent = 'Matches any URL beginning with this exact text prefix.';
+  else if (val === 'regex') hint.textContent = 'JavaScript regular expression (case-insensitive).';
+  else if (val === 'exact') hint.textContent = 'Full exact URL match.';
+});
+
+// Modal save
+document.getElementById('modal-save').addEventListener('click', async () => {
+  const inpName = document.getElementById('inp-name').value.trim();
+  const inpPattern = document.getElementById('inp-pattern').value.trim();
+  const inpType = document.getElementById('inp-type').value;
+  const inpHex = document.getElementById('inp-hex').value.trim() || selectedColorHex;
+  const inpContainerName = document.getElementById('inp-container-name').value.trim() || inpName || inpPattern;
+  const inpIcon = document.getElementById('inp-icon').value;
+  const inpMode = document.getElementById('inp-mode').value;
+  const inpTopBar = document.getElementById('inp-topbar').checked;
+  const inpEnabled = document.getElementById('inp-enabled').checked;
+
+  if (!inpPattern) {
+    alert('Please enter a URL pattern.');
+    return;
+  }
+
+  const finalName = inpName || inpPattern;
+
+  if (editingRuleIndex >= 0) {
+    // Edit existing rule
+    const rule = appConfig.rules[editingRuleIndex];
+    rule.name = finalName;
+    rule.patternType = inpType;
+    rule.pattern = inpPattern;
+    rule.color = inpHex;
+    rule.firefoxContainerColor = selectedColorName;
+    rule.containerName = inpContainerName;
+    rule.firefoxContainerIcon = inpIcon;
+    rule.colorMode = inpMode;
+    rule.accentBorder = inpTopBar;
+    rule.enabled = inpEnabled;
+  } else {
+    // Create new rule
+    const newRule = {
+      id: 'rule-' + Date.now(),
+      name: finalName,
+      patternType: inpType,
+      pattern: inpPattern,
+      color: inpHex,
+      firefoxContainerColor: selectedColorName,
+      containerName: inpContainerName,
+      firefoxContainerIcon: inpIcon,
+      colorMode: inpMode,
+      accentBorder: inpTopBar,
+      enabled: inpEnabled,
+      priority: (appConfig.rules?.length || 0) + 1,
+    };
+    appConfig.rules = [...(appConfig.rules || []), newRule];
+  }
+
+  await saveConfigToStorage();
+  closeModal();
   renderRules();
+});
+
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-cancel').addEventListener('click', closeModal);
+
+document.getElementById('btn-add-rule').addEventListener('click', () => {
+  openModal(-1);
 });
 
 document.getElementById('btn-export').addEventListener('click', () => {
@@ -754,9 +1115,14 @@ document.getElementById('btn-import').addEventListener('click', () => {
     reader.onload = async (event) => {
       try {
         const parsed = JSON.parse(event.target.result);
-        if (parsed.rules) {
+        if (Array.isArray(parsed)) {
+          appConfig.rules = parsed;
+          await saveConfigToStorage();
+          renderRules();
+          alert('Rules imported successfully!');
+        } else if (parsed.rules && Array.isArray(parsed.rules)) {
           appConfig = parsed;
-          await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
+          await saveConfigToStorage();
           renderRules();
           alert('Rules imported successfully!');
         }
