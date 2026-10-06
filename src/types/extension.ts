@@ -39,6 +39,9 @@ export interface TabColorRule {
   color: string; // Hex color e.g. #EF4444
   firefoxContainerColor: FirefoxContainerColor;
   firefoxContainerIcon: FirefoxContainerIcon;
+  customEmoji?: string; // Custom symbol or emoji e.g. '⬇️' for import tabs, '⬆️', '📦'
+  enableTitleEmoji?: boolean; // Prepends symbol to document.title so it appears on the tab
+  enableFaviconEmoji?: boolean; // Badges the tab's favicon with this emoji
   containerName: string;
   colorMode: ColorMode;
   accentBorder: boolean;

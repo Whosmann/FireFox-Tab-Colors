@@ -12,27 +12,49 @@ import {
   AlertCircle, 
   ArrowRight,
   Share2,
-  Lock
+  Lock,
+  Tag,
+  RefreshCw
 } from 'lucide-react';
 import { ExtensionConfig } from '../types/extension';
+import { bumpVersion, isValidVersion } from '../utils/versionHelper';
 
 interface PublishGuideViewProps {
   config: ExtensionConfig;
   onExportZip: () => void;
   onExportXpi: () => void;
+  onUpdateVersion?: (newVersion: string) => void;
+  onOpenVersionModal?: () => void;
 }
 
 export const PublishGuideView: React.FC<PublishGuideViewProps> = ({
   config,
   onExportZip,
   onExportXpi,
+  onUpdateVersion,
+  onOpenVersionModal,
 }) => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [customVersion, setCustomVersion] = useState(config.extensionVersion || '1.0.1');
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const handleQuickBump = (type: 'patch' | 'minor' | 'major') => {
+    const next = bumpVersion(config.extensionVersion || '1.0.1', type);
+    setCustomVersion(next);
+    if (onUpdateVersion) {
+      onUpdateVersion(next);
+    }
+  };
+
+  const handleApplyCustomVersion = () => {
+    if (isValidVersion(customVersion) && onUpdateVersion) {
+      onUpdateVersion(customVersion.trim());
+    }
   };
 
   const storeListing = {
@@ -88,6 +110,78 @@ The extension contains zero external trackers, analytics SDKs, advertising beaco
               <Download className="w-4 h-4" />
               <span>Download AMO Package (.zip)</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* AMO Re-Upload & Version Manager Card */}
+      <div className="bg-gradient-to-r from-sky-900 to-indigo-950 text-white rounded-2xl p-6 shadow-md border border-sky-800">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-400/30">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
+              <span>Version Management für AMO Reupload</span>
+            </div>
+            <h3 className="text-lg font-bold text-white">
+              Aktuelle Version: <span className="font-mono text-sky-300">v{config.extensionVersion || '1.0.1'}</span>
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Für ein Reupload / Update auf <strong>addons.mozilla.org</strong> verlangt Mozilla <strong>zwingend eine höhere Versionsnummer</strong> (z. B. nach <code>1.0.0</code> die Version <code>1.0.1</code>). Nutzen Sie die 1-Klick-Buttons, um die Version sofort zu erhöhen:
+            </p>
+          </div>
+
+          <div className="bg-slate-900/80 backdrop-blur-xs p-4 rounded-xl border border-sky-700/50 space-y-3 min-w-[280px]">
+            <div className="flex items-center justify-between text-xs text-slate-300">
+              <span className="font-semibold text-white">Schnelle Erhöhung:</span>
+              <span className="font-mono text-sky-400 font-bold">v{config.extensionVersion || '1.0.1'}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleQuickBump('patch')}
+                className="py-2 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold text-center transition-colors shadow-xs"
+                title="Erhöht die Patch-Version (Bugfixes, Regeländerungen)"
+              >
+                +0.0.1 Patch
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickBump('minor')}
+                className="py-2 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold text-center transition-colors shadow-xs"
+                title="Erhöht die Minor-Version (neue Match-Typen)"
+              >
+                +0.1.0 Minor
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickBump('major')}
+                className="py-2 px-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold text-center transition-colors shadow-xs"
+                title="Erhöht die Major-Version"
+              >
+                +1.0.0 Major
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-2.5 top-1.5 text-xs text-slate-500 font-mono">v</span>
+                <input
+                  type="text"
+                  value={customVersion}
+                  onChange={(e) => setCustomVersion(e.target.value)}
+                  placeholder="1.0.1"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-md pl-6 pr-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleApplyCustomVersion}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-colors"
+              >
+                Setzen
+              </button>
+            </div>
           </div>
         </div>
       </div>

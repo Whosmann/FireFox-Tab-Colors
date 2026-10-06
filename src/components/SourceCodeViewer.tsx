@@ -45,10 +45,15 @@ export const SourceCodeViewer: React.FC<SourceCodeViewerProps> = ({ config, onEx
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
         <div>
-          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-            <FolderOpen className="w-4 h-4 text-sky-600" />
-            Firefox Add-on Source Code Inspector
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-sky-600" />
+              Firefox Add-on Source Code Inspector
+            </h2>
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-sky-50 text-sky-700 border border-sky-200">
+              v{config.extensionVersion || '1.0.1'}
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Inspect the exact WebExtension files generated for your rules. Ready to load into Firefox via <code className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5 rounded">about:debugging</code> or direct <code className="font-mono text-slate-700 bg-slate-100 px-1 py-0.5 rounded">.xpi</code>.
           </p>

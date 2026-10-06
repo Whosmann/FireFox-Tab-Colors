@@ -52,6 +52,9 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
     initialRule?.firefoxContainerIcon || 'circle'
   );
   const [containerName, setContainerName] = useState(initialRule?.containerName || '');
+  const [customEmoji, setCustomEmoji] = useState(initialRule?.customEmoji || '');
+  const [enableTitleEmoji, setEnableTitleEmoji] = useState(initialRule?.enableTitleEmoji ?? true);
+  const [enableFaviconEmoji, setEnableFaviconEmoji] = useState(initialRule?.enableFaviconEmoji ?? true);
   const [colorMode, setColorMode] = useState<ColorMode>(initialRule?.colorMode || 'hybrid');
   const [accentBorder, setAccentBorder] = useState(initialRule?.accentBorder ?? true);
   const [enabled, setEnabled] = useState(initialRule?.enabled ?? true);
@@ -67,6 +70,9 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
         setContainerColor(initialRule.firefoxContainerColor || 'red');
         setContainerIcon(initialRule.firefoxContainerIcon || 'circle');
         setContainerName(initialRule.containerName || '');
+        setCustomEmoji(initialRule.customEmoji || '');
+        setEnableTitleEmoji(initialRule.enableTitleEmoji ?? true);
+        setEnableFaviconEmoji(initialRule.enableFaviconEmoji ?? true);
         setColorMode(initialRule.colorMode || 'hybrid');
         setAccentBorder(initialRule.accentBorder ?? true);
         setEnabled(initialRule.enabled ?? true);
@@ -78,6 +84,9 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
         setContainerColor('blue');
         setContainerIcon('circle');
         setContainerName('');
+        setCustomEmoji('');
+        setEnableTitleEmoji(true);
+        setEnableFaviconEmoji(true);
         setColorMode('hybrid');
         setAccentBorder(true);
         setEnabled(true);
@@ -113,6 +122,9 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
       color,
       firefoxContainerColor: containerColor,
       firefoxContainerIcon: containerIcon,
+      customEmoji: customEmoji.trim(),
+      enableTitleEmoji,
+      enableFaviconEmoji,
       containerName: (containerName.trim() || name.trim()),
       colorMode,
       accentBorder,
@@ -316,6 +328,116 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
             <span className="text-[10px] text-slate-400 mt-0.5 block">
               Shown in Firefox address bar container badge.
             </span>
+          </div>
+
+          {/* Custom Tab Symbol & Emoji Picker (e.g. ⬇️ for Import) */}
+          <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-3.5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-xs font-bold text-sky-950">
+                  Eigene Symbole & Emojis für Tabs (z. B. ⬇️ Pfeil runter für Import)
+                </label>
+                <span className="text-[11px] text-sky-700">
+                  Wählen Sie ein Schnell-Symbol oder geben Sie ein beliebiges eigenes Zeichen ein:
+                </span>
+              </div>
+              {customEmoji && (
+                <span className="text-xs font-mono font-bold bg-white px-2 py-0.5 rounded border border-sky-300 text-sky-800 shadow-2xs">
+                  Aktiv: {customEmoji}
+                </span>
+              )}
+            </div>
+
+            {/* Quick Symbol Chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { emoji: '⬇️', label: '⬇️ Import' },
+                { emoji: '⬆️', label: '⬆️ Export' },
+                { emoji: '📥', label: '📥 Inbox' },
+                { emoji: '📦', label: '📦 Paket' },
+                { emoji: '🚀', label: '🚀 Deploy' },
+                { emoji: '⚡', label: '⚡ Dev' },
+                { emoji: '🔒', label: '🔒 Auth' },
+                { emoji: '📁', label: '📁 Ordner' },
+                { emoji: '🛒', label: '🛒 Shop' },
+                { emoji: '🧪', label: '🧪 Test' },
+                { emoji: '📊', label: '📊 Stats' },
+                { emoji: '⚙️', label: '⚙️ Config' },
+              ].map(({ emoji, label }) => {
+                const isSelected = customEmoji === emoji;
+                return (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        setCustomEmoji('');
+                      } else {
+                        setCustomEmoji(emoji);
+                        if (!containerName) {
+                          setContainerName(`${emoji} ${name || 'Gruppe'}`);
+                        }
+                      }
+                    }}
+                    className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-all ${
+                      isSelected
+                        ? 'bg-sky-600 text-white font-bold shadow-xs ring-2 ring-sky-300'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:border-sky-300 hover:bg-sky-50/50'
+                    }`}
+                  >
+                    <span>{emoji}</span>
+                    <span className="text-[11px]">{label.slice(2)}</span>
+                  </button>
+                );
+              })}
+              {customEmoji && (
+                <button
+                  type="button"
+                  onClick={() => setCustomEmoji('')}
+                  className="px-2 py-1 rounded-lg text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200"
+                >
+                  ✕ Entfernen
+                </button>
+              )}
+            </div>
+
+            {/* Custom Symbol Free Input */}
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-slate-600 whitespace-nowrap">Freies Zeichen:</span>
+              <input
+                type="text"
+                value={customEmoji}
+                onChange={(e) => setCustomEmoji(e.target.value)}
+                placeholder="z. B. ⬇️ oder 📥 oder [IMP]"
+                className="w-28 px-2 py-1 text-xs font-mono text-center bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <span className="text-[11px] text-slate-500">
+                Wird direkt im Firefox Tab-Reiter und Container-Label dargestellt.
+              </span>
+            </div>
+
+            {/* Checkbox Options */}
+            <div className="space-y-1.5 pt-1 text-xs border-t border-sky-200/60">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={enableTitleEmoji}
+                  onChange={(e) => setEnableTitleEmoji(e.target.checked)}
+                  className="rounded text-sky-600 focus:ring-sky-500"
+                />
+                <span>Symbol im Tab-Titel anzeigen (z. B. <code>{customEmoji || '⬇️'} Meine Importseite</code>)</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={enableFaviconEmoji}
+                  onChange={(e) => setEnableFaviconEmoji(e.target.checked)}
+                  className="rounded text-sky-600 focus:ring-sky-500"
+                />
+                <span>Symbol als Tab-Favicon darstellen (ersetzt/überlagert das Webseiten-Icon)</span>
+              </label>
+            </div>
           </div>
 
           {/* Firefox Container Icon Picker Grid */}

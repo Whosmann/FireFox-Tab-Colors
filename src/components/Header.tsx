@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, BookOpen, Layers, Sliders, Code2, Globe } from 'lucide-react';
+import { Download, BookOpen, Layers, Sliders, Code2, Globe, Tag } from 'lucide-react';
 
 interface HeaderProps {
   activeTab: 'simulator' | 'rules' | 'code' | 'guide' | 'publish';
@@ -7,6 +7,8 @@ interface HeaderProps {
   onExportZip: () => void;
   onExportXpi: () => void;
   isExporting?: boolean;
+  currentVersion?: string;
+  onOpenVersionModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,21 +17,38 @@ export const Header: React.FC<HeaderProps> = ({
   onExportZip,
   onExportXpi,
   isExporting,
+  currentVersion = '1.0.1',
+  onOpenVersionModal,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        {/* Zone 1: Single text element wordmark */}
+        {/* Zone 1: Single text element wordmark + Version Pill */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-400/20 flex items-center justify-center text-sky-400 font-bold text-base shadow-sm">
             🦊
           </div>
-          <span className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-            TabChroma
-            <span className="text-xs font-normal text-slate-400 hidden sm:inline">
-              · Firefox URL Color Studio
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+              TabChroma
+              <span className="text-xs font-normal text-slate-400 hidden lg:inline">
+                · Firefox URL Color Studio
+              </span>
             </span>
-          </span>
+
+            {/* Clickable Version badge for Reupload */}
+            {onOpenVersionModal && (
+              <button
+                type="button"
+                onClick={onOpenVersionModal}
+                title="Klicken um Versionsnummer für Reupload zu ändern / erhöhen"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-sky-950/80 text-sky-300 border border-sky-700/60 hover:bg-sky-900 hover:text-sky-100 hover:border-sky-500 transition-colors shadow-2xs"
+              >
+                <Tag className="w-3 h-3 text-sky-400" />
+                <span>v{currentVersion}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Zone 2: Clean nav links with active state */}

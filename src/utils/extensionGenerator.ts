@@ -258,8 +258,9 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
 
     // If container routing is active for this rule
     if (rule.colorMode === 'container' || rule.colorMode === 'hybrid') {
+      const containerTitle = (rule.customEmoji ? rule.customEmoji + ' ' : '') + (rule.containerName || rule.name);
       const container = await getOrCreateContainer(
-        rule.containerName || rule.name,
+        containerTitle,
         rule.firefoxContainerColor || 'blue',
         rule.firefoxContainerIcon || 'circle'
       );
@@ -289,13 +290,16 @@ browser.tabs.onActivated.addListener(async (activeInfo) => {
     const rule = findMatchingRule(tab.url);
     await applyThemeForTab(activeInfo.windowId, rule);
 
-    // Notify content script of accent color
+    // Notify content script of accent color & custom tab symbol
     if (rule) {
       browser.tabs.sendMessage(tab.id, {
         action: 'UPDATE_ACCENT_COLOR',
         color: rule.color,
         accentBorder: rule.accentBorder,
         enableTopBar: appConfig.enablePageTopBar,
+        customEmoji: rule.customEmoji,
+        enableTitleEmoji: rule.enableTitleEmoji !== false,
+        enableFaviconEmoji: rule.enableFaviconEmoji !== false,
       }).catch(() => {});
     }
   } catch (err) {}
@@ -342,7 +346,7 @@ initExtension();
   // 3. content.js
   const contentJs = `/**
  * TabChroma - Content Script
- * Injects subtle top color bar or colored favicon indicator
+ * Injects subtle top color bar, title symbol badge, or custom colored favicon
  */
 
 (function () {
@@ -365,13 +369,64 @@ initExtension();
     indicatorEl.style.backgroundColor = color;
   }
 
+  function updateTitleEmoji(emoji) {
+    if (!emoji) return;
+    if (!document.title.startsWith(emoji)) {
+      document.title = emoji + ' ' + document.title;
+    }
+  }
+
+  function renderFaviconEmoji(emoji, color) {
+    if (!emoji) return;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Container background circle
+      ctx.fillStyle = color || '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(16, 16, 15, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw custom symbol / emoji in the center
+      ctx.font = '18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(emoji, 16, 18);
+
+      let link = document.querySelector("link[rel*='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'shortcut icon';
+        document.head.appendChild(link);
+      }
+      link.href = canvas.toDataURL('image/png');
+    } catch (e) {}
+  }
+
+  function applyRuleVisuals(rule) {
+    if (!rule) return;
+    if (rule.accentBorder) {
+      renderTopBar(rule.color);
+    }
+    if (rule.customEmoji) {
+      if (rule.enableTitleEmoji !== false) {
+        updateTitleEmoji(rule.customEmoji);
+      }
+      if (rule.enableFaviconEmoji !== false) {
+        renderFaviconEmoji(rule.customEmoji, rule.color);
+      }
+    }
+  }
+
   // Request initial color matching from background
   try {
     browser.runtime.sendMessage({ action: 'MATCH_URL', url: window.location.href }).then((response) => {
       if (response && response.matched && response.rule) {
-        if (response.rule.accentBorder) {
-          renderTopBar(response.rule.color);
-        }
+        applyRuleVisuals(response.rule);
       }
     }).catch(() => {});
   } catch (e) {}
@@ -381,6 +436,14 @@ initExtension();
     if (msg.action === 'UPDATE_ACCENT_COLOR') {
       if (msg.accentBorder || msg.enableTopBar) {
         renderTopBar(msg.color);
+      }
+      if (msg.customEmoji) {
+        if (msg.enableTitleEmoji) {
+          updateTitleEmoji(msg.customEmoji);
+        }
+        if (msg.enableFaviconEmoji) {
+          renderFaviconEmoji(msg.customEmoji, msg.color);
+        }
       }
     }
   });
@@ -708,6 +771,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
 
       <div class="form-group">
+        <label class="form-label">Custom Tab Symbol / Emoji (e.g. ⬇️ for Import)</label>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+          <input type="text" id="inp-emoji" class="form-input" style="width:72px; text-align:center; font-size:16px;" placeholder="⬇️">
+          <div style="display:flex; gap:4px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬇️" style="padding:4px 8px; font-size:12px;">⬇️ Import</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬆️" style="padding:4px 8px; font-size:12px;">⬆️ Export</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="📥" style="padding:4px 8px; font-size:12px;">📥 Inbox</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="📦" style="padding:4px 8px; font-size:12px;">📦 Paket</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="🚀" style="padding:4px 8px; font-size:12px;">🚀 Prod</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⚡" style="padding:4px 8px; font-size:12px;">⚡ Dev</button>
+          </div>
+        </div>
+        <div class="form-hint">Custom symbol prepended to the tab title, favicon, and container name.</div>
+      </div>
+
+      <div class="form-group">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
           <label class="form-label" style="margin-bottom:0;">Firefox Container Icon Picker</label>
           <span id="icon-selected-label" style="font-size:11px; color:#38bdf8; font-weight:600;">● Circle</span>
@@ -1023,6 +1102,7 @@ function openModal(index) {
   const inpPattern = document.getElementById('inp-pattern');
   const inpHex = document.getElementById('inp-hex');
   const inpContainerName = document.getElementById('inp-container-name');
+  const inpEmoji = document.getElementById('inp-emoji');
   const inpIcon = document.getElementById('inp-icon');
   const inpMode = document.getElementById('inp-mode');
   const inpTopBar = document.getElementById('inp-topbar');
@@ -1040,6 +1120,7 @@ function openModal(index) {
     selectedIcon = rule.firefoxContainerIcon || 'circle';
     inpIcon.value = selectedIcon;
     inpContainerName.value = rule.containerName || rule.name || '';
+    if (inpEmoji) inpEmoji.value = rule.customEmoji || '';
     inpMode.value = rule.colorMode || 'hybrid';
     inpTopBar.checked = rule.accentBorder !== false;
     inpEnabled.checked = rule.enabled !== false;
@@ -1054,6 +1135,7 @@ function openModal(index) {
     selectedIcon = 'circle';
     inpIcon.value = selectedIcon;
     inpContainerName.value = '';
+    if (inpEmoji) inpEmoji.value = '';
     inpMode.value = 'hybrid';
     inpTopBar.checked = true;
     inpEnabled.checked = true;
@@ -1136,6 +1218,7 @@ document.getElementById('modal-save').addEventListener('click', async () => {
   const inpType = document.getElementById('inp-type').value;
   const inpHex = document.getElementById('inp-hex').value.trim() || selectedColorHex;
   const inpContainerName = document.getElementById('inp-container-name').value.trim() || inpName || inpPattern;
+  const inpEmoji = (document.getElementById('inp-emoji')?.value || '').trim();
   const inpIcon = document.getElementById('inp-icon').value;
   const inpMode = document.getElementById('inp-mode').value;
   const inpTopBar = document.getElementById('inp-topbar').checked;
@@ -1157,6 +1240,7 @@ document.getElementById('modal-save').addEventListener('click', async () => {
     rule.color = inpHex;
     rule.firefoxContainerColor = selectedColorName;
     rule.containerName = inpContainerName;
+    rule.customEmoji = inpEmoji;
     rule.firefoxContainerIcon = inpIcon;
     rule.colorMode = inpMode;
     rule.accentBorder = inpTopBar;
@@ -1171,6 +1255,7 @@ document.getElementById('modal-save').addEventListener('click', async () => {
       color: inpHex,
       firefoxContainerColor: selectedColorName,
       containerName: inpContainerName,
+      customEmoji: inpEmoji,
       firefoxContainerIcon: inpIcon,
       colorMode: inpMode,
       accentBorder: inpTopBar,
@@ -1183,6 +1268,17 @@ document.getElementById('modal-save').addEventListener('click', async () => {
   await saveConfigToStorage();
   closeModal();
   renderRules();
+});
+
+// Quick symbol buttons
+document.querySelectorAll('.opt-sym-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const sym = btn.getAttribute('data-sym');
+    const inp = document.getElementById('inp-emoji');
+    if (inp) {
+      inp.value = sym;
+    }
+  });
 });
 
 document.getElementById('modal-close').addEventListener('click', closeModal);
@@ -1329,7 +1425,9 @@ TabChroma is committed to protecting your privacy.
 /**
  * Packs all files into a ZIP archive and triggers browser download
  */
-export async function downloadExtensionZip(config: ExtensionConfig, filename = 'tabchroma-firefox-addon.zip'): Promise<void> {
+export async function downloadExtensionZip(config: ExtensionConfig, filename?: string): Promise<void> {
+  const version = config.extensionVersion || '1.0.1';
+  const defaultName = `tabchroma-firefox-v${version}.zip`;
   const files = generateExtensionFiles(config);
   const zip = new JSZip();
 
@@ -1341,7 +1439,7 @@ export async function downloadExtensionZip(config: ExtensionConfig, filename = '
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = filename;
+  anchor.download = filename || defaultName;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);
@@ -1352,7 +1450,9 @@ export async function downloadExtensionZip(config: ExtensionConfig, filename = '
  * Packs all files into a Firefox .xpi archive with application/x-xpinstall MIME type
  * Firefox can install this file directly via "Install Add-on From File..." or Drag & Drop.
  */
-export async function downloadExtensionXpi(config: ExtensionConfig, filename = 'tabchroma-tab-color.xpi'): Promise<void> {
+export async function downloadExtensionXpi(config: ExtensionConfig, filename?: string): Promise<void> {
+  const version = config.extensionVersion || '1.0.1';
+  const defaultName = `tabchroma-tab-color-v${version}.xpi`;
   const files = generateExtensionFiles(config);
   const zip = new JSZip();
 
@@ -1368,7 +1468,7 @@ export async function downloadExtensionXpi(config: ExtensionConfig, filename = '
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = filename;
+  anchor.download = filename || defaultName;
   anchor.setAttribute('type', 'application/x-xpinstall');
   document.body.appendChild(anchor);
   anchor.click();

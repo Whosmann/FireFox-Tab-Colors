@@ -291,6 +291,11 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                         title="Click to edit this rule"
                       >
                         <div className="flex items-center gap-1.5 group">
+                          {rule.customEmoji && (
+                            <span className="text-sm font-normal shrink-0" title={`Symbol: ${rule.customEmoji}`}>
+                              {rule.customEmoji}
+                            </span>
+                          )}
                           <span>{rule.name}</span>
                           <Edit3 className="w-3 h-3 opacity-0 group-hover:opacity-100 text-sky-500 transition-opacity" />
                         </div>

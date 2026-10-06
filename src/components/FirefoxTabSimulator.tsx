@@ -209,11 +209,18 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
                   }}
                 >
                   {/* Favicon */}
-                  <span className="text-sm shrink-0">{tab.favicon || '🌐'}</span>
+                  <span className="text-sm shrink-0">
+                    {match.matched && match.rule?.customEmoji && match.rule.enableFaviconEmoji !== false
+                      ? match.rule.customEmoji
+                      : (tab.favicon || '🌐')}
+                  </span>
 
                   {/* Title & Container Subtitle */}
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="truncate text-xs font-medium leading-tight">
+                      {match.matched && match.rule?.customEmoji && match.rule.enableTitleEmoji !== false
+                        ? `${match.rule.customEmoji} `
+                        : ''}
                       {tab.title}
                     </span>
                     {containerName && (
@@ -221,6 +228,9 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
                         className="text-[10px] truncate font-normal opacity-80 leading-none mt-0.5"
                         style={{ color: tabColor || '#38bdf8' }}
                       >
+                        {match.matched && match.rule?.customEmoji && !containerName.startsWith(match.rule.customEmoji)
+                          ? `${match.rule.customEmoji} `
+                          : ''}
                         {containerName}
                       </span>
                     )}

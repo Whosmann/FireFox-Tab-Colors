@@ -9,6 +9,7 @@ import { FirefoxTabSimulator } from './components/FirefoxTabSimulator';
 import { UrlTesterBar } from './components/UrlTesterBar';
 import { RuleManager } from './components/RuleManager';
 import { RuleEditorModal } from './components/RuleEditorModal';
+import { VersionBumpModal } from './components/VersionBumpModal';
 import { SourceCodeViewer } from './components/SourceCodeViewer';
 import { InstallGuideView } from './components/InstallGuideView';
 import { PublishGuideView } from './components/PublishGuideView';
@@ -22,7 +23,7 @@ const INITIAL_RULES: TabColorRule[] = [
 
 const INITIAL_CONFIG: ExtensionConfig = {
   extensionName: 'TabChroma - URL Tab Color',
-  extensionVersion: '1.0.0',
+  extensionVersion: '1.0.1',
   extensionDescription: 'Automatically colors Firefox tabs based on custom URL patterns, regex rules, and Firefox Containers.',
   defaultColor: '#37adff',
   defaultContainerColor: 'blue',
@@ -31,6 +32,7 @@ const INITIAL_CONFIG: ExtensionConfig = {
   enablePageTopBar: true,
   enableFaviconBadge: true,
   enableActiveTabTheme: true,
+  revertUnmatchedToDefault: true,
 };
 
 export default function App() {
@@ -38,7 +40,11 @@ export default function App() {
     try {
       const saved = localStorage.getItem('tabchroma_config');
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (!parsed.extensionVersion || parsed.extensionVersion === '1.0.0') {
+          parsed.extensionVersion = '1.0.1';
+        }
+        return parsed;
       }
     } catch (e) {}
     return INITIAL_CONFIG;
@@ -46,6 +52,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'simulator' | 'rules' | 'code' | 'guide' | 'publish'>('simulator');
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
+  const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<TabColorRule | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -117,6 +124,14 @@ export default function App() {
     }
   };
 
+  const handleUpdateVersion = (newVersion: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      extensionVersion: newVersion,
+    }));
+    showToast(`Versionsnummer auf v${newVersion} gesetzt!`);
+  };
+
   const handleExportZip = async () => {
     try {
       setIsExporting(true);
@@ -152,6 +167,8 @@ export default function App() {
         onExportZip={handleExportZip}
         onExportXpi={handleExportXpi}
         isExporting={isExporting}
+        currentVersion={config.extensionVersion}
+        onOpenVersionModal={() => setIsVersionModalOpen(true)}
       />
 
       {/* Main Content Viewport */}
@@ -214,6 +231,8 @@ export default function App() {
             config={config}
             onExportZip={handleExportZip}
             onExportXpi={handleExportXpi}
+            onUpdateVersion={handleUpdateVersion}
+            onOpenVersionModal={() => setIsVersionModalOpen(true)}
           />
         )}
       </main>
@@ -225,6 +244,8 @@ export default function App() {
             <span className="font-semibold text-slate-800">TabChroma</span>
             <span>·</span>
             <span>Firefox WebExtension Manifest V3 Studio</span>
+            <span>·</span>
+            <span className="font-mono text-slate-400">v{config.extensionVersion}</span>
           </div>
 
           <div className="flex items-center gap-4 text-xs">
@@ -271,6 +292,22 @@ export default function App() {
         }}
         onSave={handleSaveRule}
         initialRule={editingRule}
+      />
+
+      {/* Modal for bumping extension version */}
+      <VersionBumpModal
+        isOpen={isVersionModalOpen}
+        onClose={() => setIsVersionModalOpen(false)}
+        currentVersion={config.extensionVersion || '1.0.1'}
+        onSaveVersion={handleUpdateVersion}
+        onExportZipWithVersion={async (v) => {
+          handleUpdateVersion(v);
+          await downloadExtensionZip({ ...config, extensionVersion: v });
+        }}
+        onExportXpiWithVersion={async (v) => {
+          handleUpdateVersion(v);
+          await downloadExtensionXpi({ ...config, extensionVersion: v });
+        }}
       />
 
       {/* Toast Notification */}
