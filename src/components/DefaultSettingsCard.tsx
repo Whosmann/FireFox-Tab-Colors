@@ -198,6 +198,30 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
         </div>
       </div>
 
+      {/* AMO Add-on ID Configuration */}
+      <div className="bg-slate-50/70 p-3 rounded-lg border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-800">Mozilla AMO Add-on-ID (manifest.json):</span>
+            <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+              AMO Übereinstimmung
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Wird für Updates auf Mozilla Add-ons (AMO) zwingend vorausgesetzt.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={config.geckoId || 'tabchroma-tab-color@whosmann.de'}
+            onChange={(e) => onChangeConfig({ geckoId: e.target.value })}
+            placeholder="tabchroma-tab-color@whosmann.de"
+            className="px-3 py-1.5 text-xs font-mono font-medium rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 min-w-[280px]"
+          />
+        </div>
+      </div>
+
       {/* Info Notice */}
       <div className="flex items-center gap-2 p-2.5 bg-sky-50 rounded-lg border border-sky-200 text-xs text-sky-900">
         <Info className="w-4 h-4 text-sky-600 shrink-0" />

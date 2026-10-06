@@ -75,15 +75,15 @@ export const EXAMPLE_TAB_SCENARIOS: ExampleScenario[] = [
       },
       {
         id: 'tab-5',
-        title: '248924.4.whomsann.de/app',
-        url: 'https://248924.4.whomsann.de/app',
+        title: '248924.4.internal-cloud.net/app',
+        url: 'https://248924.4.internal-cloud.net/app',
         favicon: '📦',
         matchedRuleId: null,
       },
       {
         id: 'tab-6',
-        title: '248923.32.whomsann.de - Isoliert',
-        url: 'https://248923.32.whomsann.de/app',
+        title: '248923.32.internal-cloud.net - Isoliert',
+        url: 'https://248923.32.internal-cloud.net/app',
         favicon: '🌐',
         matchedRuleId: null,
       },
@@ -138,22 +138,22 @@ export const EXAMPLE_TAB_SCENARIOS: ExampleScenario[] = [
     tabs: [
       {
         id: 'tab-s1',
-        title: '248924.4.whomsann.de (Mit spezifischer Regel)',
-        url: 'https://248924.4.whomsann.de/app',
+        title: '248924.4.internal-cloud.net (Mit spezifischer Regel)',
+        url: 'https://248924.4.internal-cloud.net/app',
         favicon: '📦',
         matchedRuleId: null,
       },
       {
         id: 'tab-s2',
-        title: '248923.32.whomsann.de (Ohne Regel - isoliert)',
-        url: 'https://248923.32.whomsann.de/app',
+        title: '248923.32.internal-cloud.net (Ohne Regel - isoliert)',
+        url: 'https://248923.32.internal-cloud.net/app',
         favicon: '🌐',
         matchedRuleId: null,
       },
       {
         id: 'tab-s3',
-        title: 'auth.whomsann.de (Login-Portal)',
-        url: 'https://auth.whomsann.de/login',
+        title: 'auth.internal-cloud.net (Login-Portal)',
+        url: 'https://auth.internal-cloud.net/login',
         favicon: '🔒',
         matchedRuleId: null,
       },
@@ -441,9 +441,9 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
           </div>
         </div>
       );
-    } else if (url.includes('whomsann.de')) {
-      const isExactHost = url.includes('248924.4.whomsann.de');
-      const isAuth = url.includes('auth.whomsann.de');
+    } else if (url.includes('internal-cloud.net')) {
+      const isExactHost = url.includes('248924.4.internal-cloud.net');
+      const isAuth = url.includes('auth.internal-cloud.net');
       specificContent = (
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
@@ -475,7 +475,7 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
             {isAuth
               ? 'Login-Sessions und Auth-Token werden in einem geschützten Authentifizierungs-Container verwaltet.'
               : isExactHost 
-              ? 'Dieser Host entspricht exakt der Regel für 248924.4.whomsann.de und wird dem konfigurierten Container zugeordnet.'
+              ? 'Dieser Host entspricht exakt der Regel für 248924.4.internal-cloud.net und wird dem konfigurierten Container zugeordnet.'
               : 'Diese Subdomain unterscheidet sich vom konfigurierten Host und wird dank exakter Host-Prüfung getrennt gehalten.'}
           </p>
         </div>
@@ -719,7 +719,7 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
             + Dev ⚡
           </button>
           <button
-            onClick={() => handleQuickAdd('https://248924.4.whomsann.de/app', '248924.4.whomsann.de', '📦')}
+            onClick={() => handleQuickAdd('https://248924.4.internal-cloud.net/app', '248924.4.internal-cloud.net', '📦')}
             className="px-2 py-0.5 rounded bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-200 text-xs font-mono whitespace-nowrap shadow-2xs"
           >
             + 248924.4

@@ -6,26 +6,30 @@ interface VersionBumpModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentVersion: string;
-  onSaveVersion: (newVersion: string) => void;
-  onExportZipWithVersion?: (version: string) => void;
-  onExportXpiWithVersion?: (version: string) => void;
+  geckoId?: string;
+  onSaveVersion: (newVersion: string, newGeckoId?: string) => void;
+  onExportZipWithVersion?: (version: string, newGeckoId?: string) => void;
+  onExportXpiWithVersion?: (version: string, newGeckoId?: string) => void;
 }
 
 export const VersionBumpModal: React.FC<VersionBumpModalProps> = ({
   isOpen,
   onClose,
   currentVersion,
+  geckoId,
   onSaveVersion,
   onExportZipWithVersion,
   onExportXpiWithVersion,
 }) => {
   const [version, setVersion] = useState(currentVersion || '1.0.1');
+  const [amoId, setAmoId] = useState(geckoId || 'tabchroma-tab-color@whosmann.de');
 
   useEffect(() => {
     if (isOpen) {
       setVersion(currentVersion || '1.0.1');
+      setAmoId(geckoId || 'tabchroma-tab-color@whosmann.de');
     }
-  }, [isOpen, currentVersion]);
+  }, [isOpen, currentVersion, geckoId]);
 
   if (!isOpen) return null;
 
@@ -38,24 +42,24 @@ export const VersionBumpModal: React.FC<VersionBumpModalProps> = ({
 
   const handleSave = () => {
     if (!valid) return;
-    onSaveVersion(version.trim());
+    onSaveVersion(version.trim(), amoId.trim());
     onClose();
   };
 
   const handleExportZip = () => {
     if (!valid) return;
-    onSaveVersion(version.trim());
+    onSaveVersion(version.trim(), amoId.trim());
     if (onExportZipWithVersion) {
-      onExportZipWithVersion(version.trim());
+      onExportZipWithVersion(version.trim(), amoId.trim());
     }
     onClose();
   };
 
   const handleExportXpi = () => {
     if (!valid) return;
-    onSaveVersion(version.trim());
+    onSaveVersion(version.trim(), amoId.trim());
     if (onExportXpiWithVersion) {
-      onExportXpiWithVersion(version.trim());
+      onExportXpiWithVersion(version.trim(), amoId.trim());
     }
     onClose();
   };
@@ -167,6 +171,28 @@ export const VersionBumpModal: React.FC<VersionBumpModalProps> = ({
                 </span>
               </button>
             </div>
+          </div>
+
+          {/* AMO Add-on ID (gecko.id) */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-700">
+                Mozilla AMO Add-on-ID (gecko.id)
+              </label>
+              <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                AMO Registriert
+              </span>
+            </div>
+            <input
+              type="text"
+              value={amoId}
+              onChange={(e) => setAmoId(e.target.value)}
+              placeholder="tabchroma-tab-color@whosmann.de"
+              className="w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border border-slate-300 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+            <p className="text-[11px] text-slate-500 leading-snug">
+              Muss exakt mit der ID Ihres bestehenden Add-ons auf addons.mozilla.org übereinstimmen: <code>tabchroma-tab-color@whosmann.de</code>.
+            </p>
           </div>
 
           {/* Filename Preview */}

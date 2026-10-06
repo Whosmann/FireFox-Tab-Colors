@@ -250,9 +250,9 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 onChange={(e) => setPattern(e.target.value)}
                 placeholder={
                   patternType === 'domain'
-                    ? 'e.g. whomsann.de or example.com'
+                    ? 'e.g. example.com or github.com'
                     : patternType === 'exact_host'
-                    ? 'e.g. 248924.4.whomsann.de (isolates other subdomains!)'
+                    ? 'e.g. api.staging.internal.net (isoliert Subdomains!)'
                     : patternType === 'wildcard'
                     ? 'e.g. *.staging.com/* or localhost:*'
                     : patternType === 'prefix'
@@ -277,12 +277,12 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
             <div className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-md border border-slate-200">
               {patternType === 'domain' && (
                 <span>
-                  <strong>Domain:</strong> Matches exact domain AND all its subdomains (e.g. <code>whomsann.de</code> matches both <code>248924.4.whomsann.de</code> and <code>248923.32.whomsann.de</code>).
+                  <strong>Domain:</strong> Matches exact domain AND all its subdomains (e.g. <code>internal-cloud.net</code> matches both <code>app.internal-cloud.net</code> and <code>staging.internal-cloud.net</code>).
                 </span>
               )}
               {patternType === 'exact_host' && (
                 <span>
-                  <strong>Exact Host (Empfohlen bei Subdomains):</strong> Matches <em>NUR</em> diesen exakten Host (z. B. <code>248924.4.whomsann.de</code>). Andere Subdomains wie <code>248923.32.whomsann.de</code> werden <strong>nicht</strong> zugeteilt!
+                  <strong>Exact Host (Empfohlen bei Subdomains):</strong> Matches <em>NUR</em> diesen exakten Host (z. B. <code>248924.4.internal-cloud.net</code>). Andere Subdomains wie <code>248923.32.internal-cloud.net</code> werden <strong>nicht</strong> zugeteilt!
                 </span>
               )}
               {patternType === 'wildcard' && 'Supports * for multiple characters and ? for single character.'}

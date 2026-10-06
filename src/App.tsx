@@ -26,6 +26,7 @@ const INITIAL_CONFIG: ExtensionConfig = {
   extensionName: 'TabChroma - URL Tab Color',
   extensionVersion: '1.0.1',
   extensionDescription: 'Automatically colors Firefox tabs based on custom URL patterns, regex rules, and Firefox Containers.',
+  geckoId: 'tabchroma-tab-color@whosmann.de',
   defaultColor: '#37adff',
   defaultContainerColor: 'blue',
   defaultMode: 'container', // 'container' leaves Firefox's native browser window Farbschema untouched!
@@ -44,6 +45,11 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (!parsed.extensionVersion || parsed.extensionVersion === '1.0.0') {
           parsed.extensionVersion = '1.0.1';
+        }
+
+        // Restore exact Mozilla AMO Add-on ID for registered extensions
+        if (!parsed.geckoId || parsed.geckoId.includes('@firefox-extension.local')) {
+          parsed.geckoId = 'tabchroma-tab-color@whosmann.de';
         }
 
         // Strictly sanitize any rule referencing azure or proprietary cloud
@@ -161,12 +167,13 @@ export default function App() {
     }
   };
 
-  const handleUpdateVersion = (newVersion: string) => {
+  const handleUpdateVersion = (newVersion: string, newGeckoId?: string) => {
     setConfig((prev) => ({
       ...prev,
       extensionVersion: newVersion,
+      ...(newGeckoId ? { geckoId: newGeckoId } : {}),
     }));
-    showToast(`Versionsnummer auf v${newVersion} gesetzt!`);
+    showToast(`Version v${newVersion} & Add-on-ID aktualisiert!`);
   };
 
   const handleExportZip = async () => {
@@ -356,14 +363,23 @@ export default function App() {
         isOpen={isVersionModalOpen}
         onClose={() => setIsVersionModalOpen(false)}
         currentVersion={config.extensionVersion || '1.0.1'}
+        geckoId={config.geckoId || 'tabchroma-tab-color@whosmann.de'}
         onSaveVersion={handleUpdateVersion}
-        onExportZipWithVersion={async (v) => {
-          handleUpdateVersion(v);
-          await downloadExtensionZip({ ...config, extensionVersion: v });
+        onExportZipWithVersion={async (v, gid) => {
+          handleUpdateVersion(v, gid);
+          await downloadExtensionZip({ 
+            ...config, 
+            extensionVersion: v, 
+            geckoId: gid || config.geckoId || 'tabchroma-tab-color@whosmann.de' 
+          });
         }}
-        onExportXpiWithVersion={async (v) => {
-          handleUpdateVersion(v);
-          await downloadExtensionXpi({ ...config, extensionVersion: v });
+        onExportXpiWithVersion={async (v, gid) => {
+          handleUpdateVersion(v, gid);
+          await downloadExtensionXpi({ 
+            ...config, 
+            extensionVersion: v, 
+            geckoId: gid || config.geckoId || 'tabchroma-tab-color@whosmann.de' 
+          });
         }}
       />
 

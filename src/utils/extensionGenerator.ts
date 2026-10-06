@@ -101,12 +101,49 @@ const containerCache = new Map(); // name -> cookieStoreId
 // Initialize extension storage and load rules
 async function initExtension() {
   try {
-    const data = await browser.storage.local.get(['tabChromaConfig']);
+    const data = await browser.storage.local.get(['tabChromaConfig', 'extensionVersion']);
+    const isNewVersion = !data.extensionVersion || data.extensionVersion !== DEFAULT_CONFIG.extensionVersion;
+
     if (data.tabChromaConfig) {
-      appConfig = data.tabChromaConfig;
+      // Merge stored config with defaults to ensure all fields exist
+      appConfig = {
+        ...DEFAULT_CONFIG,
+        ...data.tabChromaConfig,
+      };
+
+      // Ensure standard settings are present
+      if (!appConfig.defaultColor) appConfig.defaultColor = DEFAULT_CONFIG.defaultColor || '#37adff';
+      if (!appConfig.defaultContainerColor) appConfig.defaultContainerColor = DEFAULT_CONFIG.defaultContainerColor || 'blue';
+      if (!appConfig.defaultMode) appConfig.defaultMode = DEFAULT_CONFIG.defaultMode || 'container';
+
+      // If re-packaged or updated with new version, ensure new default rules and settings are merged
+      if (isNewVersion) {
+        const existingRuleKeys = new Set(
+          (appConfig.rules || []).map((r) => ((r.patternType || 'domain') + '::' + (r.pattern || '')).toLowerCase())
+        );
+        (DEFAULT_CONFIG.rules || []).forEach((defRule) => {
+          const key = ((defRule.patternType || 'domain') + '::' + (defRule.pattern || '')).toLowerCase();
+          if (!existingRuleKeys.has(key)) {
+            appConfig.rules.push(defRule);
+          }
+        });
+        if (DEFAULT_CONFIG.defaultColor) appConfig.defaultColor = DEFAULT_CONFIG.defaultColor;
+        if (DEFAULT_CONFIG.defaultContainerColor) appConfig.defaultContainerColor = DEFAULT_CONFIG.defaultContainerColor;
+        if (DEFAULT_CONFIG.defaultMode) appConfig.defaultMode = DEFAULT_CONFIG.defaultMode;
+      }
+
       currentRules = appConfig.rules || [];
+      await browser.storage.local.set({
+        tabChromaConfig: appConfig,
+        extensionVersion: DEFAULT_CONFIG.extensionVersion,
+      });
     } else {
-      await browser.storage.local.set({ tabChromaConfig: DEFAULT_CONFIG });
+      appConfig = { ...DEFAULT_CONFIG };
+      currentRules = appConfig.rules || [];
+      await browser.storage.local.set({
+        tabChromaConfig: DEFAULT_CONFIG,
+        extensionVersion: DEFAULT_CONFIG.extensionVersion,
+      });
     }
   } catch (err) {
     console.warn('[TabChroma] Using default embedded rules:', err);
@@ -282,6 +319,27 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
   }
 });
 
+// Notify content script of accent color & custom tab symbol
+async function notifyTabVisuals(tabId, rule) {
+  try {
+    if (rule) {
+      await browser.tabs.sendMessage(tabId, {
+        action: 'UPDATE_ACCENT_COLOR',
+        color: rule.color || appConfig.defaultColor || '#37adff',
+        accentBorder: rule.accentBorder !== false,
+        enableTopBar: appConfig.enablePageTopBar,
+        customEmoji: rule.customEmoji,
+        enableTitleEmoji: rule.enableTitleEmoji !== false,
+        enableFaviconEmoji: rule.enableFaviconEmoji !== false,
+      });
+    } else {
+      await browser.tabs.sendMessage(tabId, {
+        action: 'CLEAR_ACCENT_COLOR',
+      });
+    }
+  } catch (err) {}
+}
+
 // Update window theme when switching active tab
 browser.tabs.onActivated.addListener(async (activeInfo) => {
   try {
@@ -289,27 +347,18 @@ browser.tabs.onActivated.addListener(async (activeInfo) => {
     if (!tab || !tab.url) return;
     const rule = findMatchingRule(tab.url);
     await applyThemeForTab(activeInfo.windowId, rule);
-
-    // Notify content script of accent color & custom tab symbol
-    if (rule) {
-      browser.tabs.sendMessage(tab.id, {
-        action: 'UPDATE_ACCENT_COLOR',
-        color: rule.color,
-        accentBorder: rule.accentBorder,
-        enableTopBar: appConfig.enablePageTopBar,
-        customEmoji: rule.customEmoji,
-        enableTitleEmoji: rule.enableTitleEmoji !== false,
-        enableFaviconEmoji: rule.enableFaviconEmoji !== false,
-      }).catch(() => {});
-    }
+    await notifyTabVisuals(tab.id, rule);
   } catch (err) {}
 });
 
 // Listen for tab URL updates
 browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.url && tab.active) {
+  if (changeInfo.url) {
     const rule = findMatchingRule(changeInfo.url);
-    await applyThemeForTab(tab.windowId, rule);
+    if (tab.active) {
+      await applyThemeForTab(tab.windowId, rule);
+    }
+    await notifyTabVisuals(tabId, rule);
   }
 });
 
@@ -735,232 +784,462 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 6. options.html
   const optionsHtml = `<!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>TabChroma - Firefox URL Tab Color Rules</title>
+  <title>TabChroma - Firefox URL Tab Color & Container Studio</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: #0b0f19; color: #f8fafc; padding: 28px; line-height: 1.5; }
-    .container { max-width: 1040px; margin: 0 auto; }
-    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    body { background: #0b0f19; color: #f8fafc; padding: 24px; line-height: 1.5; font-size: 13px; }
+    .container { max-width: 1080px; margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
     h1 { font-size: 20px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
-    .desc { font-size: 13px; color: #94a3b8; margin-top: 4px; }
-    .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
+    .desc { font-size: 13px; color: #94a3b8; margin-top: 3px; }
+    .btn { padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
     .btn-primary { background: #0284c7; color: white; }
     .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+    .btn-danger { background: #ef4444; color: white; }
     .btn:hover { opacity: 0.9; }
-    .actions-bar { display: flex; gap: 10px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 16px; background: #111827; border-radius: 8px; overflow: hidden; border: 1px solid #1f2937; }
-    th { text-align: left; padding: 12px 14px; font-size: 11px; text-transform: uppercase; color: #94a3b8; background: #1f2937; letter-spacing: 0.05em; }
-    td { padding: 12px 14px; border-top: 1px solid #1f2937; font-size: 13px; vertical-align: middle; }
-    .color-swatch { width: 16px; height: 16px; border-radius: 4px; display: inline-block; vertical-align: middle; margin-right: 8px; }
-    .pattern-code { font-family: monospace; background: #1e293b; padding: 3px 7px; border-radius: 4px; font-size: 12px; color: #38bdf8; word-break: break-all; }
-    .badge { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: #374151; color: #d1d5db; font-family: monospace; }
+    .actions-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+    
+    /* Defaults Card matching Studio Preview */
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1px solid #1f2937; padding-bottom: 12px; }
+    .card-title { font-size: 15px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px; }
+    .card-subtitle { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+    .defaults-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .default-col { background: #182234; border: 1px solid #283548; border-radius: 8px; padding: 14px; }
+    .col-title { font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    
+    .color-swatch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+    .swatch-btn { height: 28px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+    .swatch-btn.selected { border-color: #fff; box-shadow: 0 0 0 2px #38bdf8; }
+    
+    .mode-radio-box { border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; background: #1e293b; }
+    .mode-radio-box.selected { border-color: #38bdf8; background: rgba(56,189,248,0.1); }
+    .mode-radio-title { font-weight: 700; font-size: 12px; color: #f8fafc; margin-bottom: 2px; }
+    .mode-radio-desc { font-size: 11px; color: #94a3b8; line-height: 1.3; }
+    
+    .check-label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #cbd5e1; cursor: pointer; margin-bottom: 10px; }
+    .check-label input { margin-top: 2px; }
+    .check-label strong { color: #f8fafc; display: block; }
+    .check-label span { font-size: 11px; color: #94a3b8; }
+    
+    .tip-banner { background: #0c4a6e; border: 1px solid #0284c7; border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #bae6fd; display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    
+    /* Table */
+    table { width: 100%; border-collapse: collapse; background: #111827; border-radius: 8px; overflow: hidden; border: 1px solid #1f2937; margin-top: 12px; }
+    th { text-align: left; padding: 11px 13px; font-size: 11px; text-transform: uppercase; color: #94a3b8; background: #1f2937; letter-spacing: 0.05em; }
+    td { padding: 11px 13px; border-top: 1px solid #1f2937; font-size: 12px; vertical-align: middle; }
+    .color-swatch { width: 15px; height: 15px; border-radius: 4px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+    .pattern-code { font-family: monospace; background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #38bdf8; word-break: break-all; }
+    .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #374151; color: #d1d5db; font-family: monospace; }
+    .badge-sym { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: #0369a1; color: #e0f2fe; font-weight: 700; margin-left: 4px; }
     .btn-cell { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
-    .edit-btn { background: #0284c7; color: white; padding: 5px 12px; border-radius: 5px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; }
-    .del-btn { background: #ef4444; color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; }
+    .edit-btn { background: #0284c7; color: white; padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
+    .del-btn { background: #ef4444; color: white; padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
     .priority-btn { background: #1f2937; color: #94a3b8; border: 1px solid #374151; border-radius: 4px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .priority-btn:hover { color: #fff; background: #374151; }
-    .edit-btn:hover, .del-btn:hover { opacity: 0.85; }
 
-    /* Modal Styles */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(2px); }
+    /* Modals */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(3px); }
     .modal-overlay.active { display: flex; }
-    .modal { background: #111827; border: 1px solid #374151; border-radius: 12px; width: 100%; max-width: 580px; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 12px; margin-bottom: 18px; }
-    .modal-title { font-size: 17px; font-weight: 700; color: #f8fafc; }
+    .modal { background: #111827; border: 1px solid #374151; border-radius: 12px; width: 100%; max-width: 620px; max-height: 92vh; overflow-y: auto; padding: 22px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 12px; margin-bottom: 16px; }
+    .modal-title { font-size: 16px; font-weight: 700; color: #f8fafc; }
     .close-btn { background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; line-height: 1; }
     .close-btn:hover { color: #fff; }
-    .form-group { margin-bottom: 14px; }
-    .form-label { display: block; font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 5px; }
-    .form-input, .form-select { width: 100%; padding: 8px 12px; background: #1e293b; border: 1px solid #374151; border-radius: 6px; color: #f8fafc; font-size: 13px; outline: none; }
-    .form-input:focus, .form-select:focus { border-color: #38bdf8; }
-    .form-hint { font-size: 11px; color: #64748b; margin-top: 4px; }
-    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; margin-bottom: 8px; }
-    .color-opt { height: 32px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
-    .color-opt.selected { border-color: #fff; box-shadow: 0 0 0 2px #38bdf8; }
-    .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
-    .icon-btn { background: #1e293b; border: 1px solid #374151; border-radius: 8px; padding: 6px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #cbd5e1; transition: all 0.15s; }
-    .icon-btn:hover { background: #334155; color: #fff; border-color: #64748b; }
-    .icon-btn.selected { background: rgba(56, 189, 248, 0.15); border-color: #38bdf8; color: #38bdf8; font-weight: 700; box-shadow: 0 0 0 1px #38bdf8; }
-    .icon-sym { font-size: 16px; margin-bottom: 2px; }
-    .icon-lbl { font-size: 10px; }
-    .update-banner { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 14px 18px; margin-top: 24px; font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-    .update-banner code { background: #1e293b; color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
-    .preview-box { background: #1e293b; border-radius: 8px; padding: 12px; margin-top: 14px; border: 1px solid #334155; }
-    .preview-tab { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 6px 6px 0 0; background: #0f172a; color: #fff; font-size: 12px; font-weight: 600; border-top: 3px solid #ff4f5e; }
-    .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 14px; border-top: 1px solid #1f2937; }
+    .form-group { margin-bottom: 13px; }
+    .form-label { display: block; font-size: 11px; font-weight: 700; color: #cbd5e1; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .form-input, .form-select, .form-textarea { width: 100%; padding: 8px 11px; background: #1e293b; border: 1px solid #374151; border-radius: 6px; color: #f8fafc; font-size: 12px; outline: none; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: #38bdf8; }
+    .form-hint { font-size: 11px; color: #64748b; margin-top: 3px; }
+    .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 5px; }
+    .icon-btn { background: #1e293b; border: 1px solid #374151; border-radius: 6px; padding: 5px 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #cbd5e1; }
+    .icon-btn.selected { background: rgba(56, 189, 248, 0.2); border-color: #38bdf8; color: #38bdf8; font-weight: 700; }
+    .icon-sym { font-size: 15px; }
+    .icon-lbl { font-size: 10px; margin-top: 2px; }
+
+    /* Realistic Tab Preview in Modal */
+    .preview-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; margin-top: 14px; }
+    .preview-header { font-size: 11px; font-weight: 700; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; display: flex; justify-content: space-between; }
+    .sim-tab-bar { background: #1e1e2e; padding: 6px 8px 0 8px; border-radius: 6px 6px 0 0; display: flex; align-items: flex-end; }
+    .sim-tab { background: #2d2d3f; border-radius: 6px 6px 0 0; padding: 6px 12px; display: inline-flex; align-items: center; gap: 8px; border-top: 3px solid #37adff; color: #f8fafc; font-size: 12px; font-weight: 600; box-shadow: 0 -2px 5px rgba(0,0,0,0.3); }
+    .sim-favicon { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+    .sim-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .sim-pill { background: rgba(55,173,255,0.2); border: 1px solid #37adff; color: #38bdf8; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 8px; font-weight: 600; }
+    
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 1px solid #1f2937; }
+    
+    /* Tabs inside Import Modal */
+    .tab-nav { display: flex; gap: 4px; border-bottom: 1px solid #374151; margin-bottom: 14px; }
+    .tab-nav-btn { padding: 7px 14px; border: none; background: transparent; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab-nav-btn.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+    .stats-card { background: #182234; border: 1px solid #283548; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; }
+    .conflict-box { background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; max-height: 140px; overflow-y: auto; font-size: 11px; margin-top: 8px; }
+    .conflict-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #374151; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <div>
-        <h1>TabChroma Rules Configuration</h1>
-        <div class="desc">Define and edit which URLs should get which Firefox tab color and container identity.</div>
+        <h1>🎨 TabChroma - Firefox URL Tab Color Studio</h1>
+        <div class="desc">Definiere Standard-Farben, URL-Regeln, Symbole und Multi-Account Container für Firefox Tabs.</div>
       </div>
       <div class="actions-bar">
-        <button id="btn-export" class="btn btn-secondary">Export JSON</button>
-        <button id="btn-import" class="btn btn-secondary">Import JSON</button>
-        <button id="btn-add-rule" class="btn btn-primary">+ Add New Rule</button>
+        <button id="btn-import-modal-open" class="btn btn-secondary">📥 Import JSON (Distinct)</button>
+        <button id="btn-export" class="btn btn-secondary">📤 Export JSON</button>
+        <button id="btn-add-rule" class="btn btn-primary">+ Neue Regel erstellen</button>
       </div>
     </header>
+
+    <!-- Standard-Einstellungen & Farbschema (Defaults) Card matching Studio Preview -->
+    <div class="card" id="card-defaults">
+      <div class="card-header">
+        <div>
+          <div class="card-title">⚙️ Standard-Einstellungen &amp; Farbschema (Defaults)</div>
+          <div class="card-subtitle">Diese Werte werden als Vorlage für neue Regeln und beim JSON-Import als Default verwendet.</div>
+        </div>
+        <button id="btn-reset-defaults" class="btn btn-secondary" style="font-size:11px;" title="Setzt alle Dummy-Regeln auf Standard zurück">
+          🔄 Dummy-Regeln zurücksetzen
+        </button>
+      </div>
+
+      <div class="defaults-grid">
+        <!-- 1. Standard-Container-Farbe -->
+        <div class="default-col">
+          <div class="col-title">1. Standard-Container-Farbe</div>
+          <div class="color-swatch-grid" id="def-color-grid">
+            <button type="button" class="swatch-btn" data-color="blue" data-hex="#37adff" style="background:#37adff;">Blue</button>
+            <button type="button" class="swatch-btn" data-color="turquoise" data-hex="#00c79a" style="background:#00c79a;">Turquoise</button>
+            <button type="button" class="swatch-btn" data-color="green" data-hex="#51cf66" style="background:#51cf66;">Green</button>
+            <button type="button" class="swatch-btn" data-color="yellow" data-hex="#ffcb00" style="background:#ffcb00; color:#000;">Yellow</button>
+            <button type="button" class="swatch-btn" data-color="orange" data-hex="#ff9400" style="background:#ff9400;">Orange</button>
+            <button type="button" class="swatch-btn" data-color="red" data-hex="#ff4f5e" style="background:#ff4f5e;">Red</button>
+            <button type="button" class="swatch-btn" data-color="pink" data-hex="#ff4ba0" style="background:#ff4ba0;">Pink</button>
+            <button type="button" class="swatch-btn" data-color="purple" data-hex="#9059ff" style="background:#9059ff;">Purple</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:11px; color:#94a3b8;">Hex-Farbe:</span>
+            <input type="color" id="def-picker" style="width:26px; height:26px; border:none; border-radius:4px; cursor:pointer; background:transparent;">
+            <input type="text" id="def-hex" class="form-input" style="width:85px; font-family:monospace; padding:4px 8px; font-size:11px;" value="#37adff">
+          </div>
+        </div>
+
+        <!-- 2. Standard-Farbmodus -->
+        <div class="default-col">
+          <div class="col-title">2. Standard-Farbmodus</div>
+          <div id="mode-opt-container" class="mode-radio-box selected">
+            <div class="mode-radio-title">Nur Container (Empfohlen)</div>
+            <div class="mode-radio-desc">Farbschema von Firefox bleibt vollständig unverändert. Nur Tab-Linie &amp; Container-Badge werden gefärbt.</div>
+          </div>
+          <div id="mode-opt-hybrid" class="mode-radio-box">
+            <div class="mode-radio-title">Hybrid (Container + Theme)</div>
+            <div class="mode-radio-desc">Färbt den Container und passt zusätzlich die Firefox-Toolbar dynamisch an.</div>
+          </div>
+        </div>
+
+        <!-- 3. Browser-Farbschema Schutz -->
+        <div class="default-col">
+          <div class="col-title">3. Browser-Farbschema Schutz</div>
+          <label class="check-label">
+            <input type="checkbox" id="def-active-theme">
+            <div>
+              <strong>Firefox-Fenstertheme überschreiben</strong>
+              <span>Aktiv: Firefox-Symbolleisten wechseln beim Tab-Wechsel die Farbe.</span>
+            </div>
+          </label>
+          <label class="check-label">
+            <input type="checkbox" id="def-revert-unmatched" checked>
+            <div>
+              <strong>Nicht zugeordnete URLs im Standard-Container</strong>
+              <span>Verhindert, dass fremde URLs im vorherigen Farb-Container verbleiben.</span>
+            </div>
+          </label>
+          <label class="check-label">
+            <input type="checkbox" id="def-enable-topbar" checked>
+            <div>
+              <strong>3px Seiten-Akzentleiste</strong>
+              <span>Zeigt farbigen 3px Strich am oberen Rand passender Webseiten.</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <button id="btn-save-defaults" class="btn btn-primary">💾 Standard-Einstellungen speichern</button>
+        <span id="defaults-feedback" style="font-size:12px; color:#10b981; font-weight:700; display:none;">✓ Standard-Einstellungen live in Firefox gespeichert!</span>
+      </div>
+
+      <div class="tip-banner">
+        <span>ℹ️</span>
+        <span><strong>Tipp für JSON-Import &amp; neue Regeln:</strong> Beim Importieren von JSON werden Sie gefragt, ob das hier konfigurierte Standard-Farbschema auf alle importierten Regeln angewendet werden soll.</span>
+      </div>
+    </div>
+
+    <!-- URL Rules Table -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h2 style="font-size:16px; font-weight:700; color:#f8fafc;" id="table-heading">Konfigurierte URL-Regeln</h2>
+      <span id="rules-count-pill" style="font-size:11px; background:#1e293b; color:#38bdf8; padding:3px 8px; border-radius:12px; border:1px solid #334155;">0 Regeln</span>
+    </div>
 
     <table id="rules-table">
       <thead>
         <tr>
-          <th style="width: 70px;">Priority</th>
-          <th>Color</th>
-          <th>Rule Name</th>
-          <th>Match Type</th>
+          <th style="width: 70px;">Priorität</th>
+          <th>Farbe</th>
+          <th>Regel-Name &amp; Symbol</th>
+          <th>Match-Typ</th>
           <th>Pattern</th>
           <th>Container</th>
           <th>Status</th>
-          <th style="text-align: right;">Action</th>
+          <th style="text-align: right;">Aktionen</th>
         </tr>
       </thead>
       <tbody id="rules-body">
         <!-- Rendered by options.js -->
       </tbody>
     </table>
-
-    <div class="update-banner">
-      <div>
-        <strong style="color: #f8fafc;">📦 How to update this package in Firefox:</strong>
-        <span style="margin-left: 6px;">Open <code>about:addons</code> &rarr; click <strong>⚙️ (Gear icon)</strong> &rarr; <strong>"Install Add-on From File..."</strong> and select your newly downloaded <code>.xpi</code>. Firefox will update TabChroma in-place and preserve your rules!</span>
-      </div>
-    </div>
   </div>
 
   <!-- Rule Edit & Create Modal -->
   <div id="modal-overlay" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
-        <h2 id="modal-title" class="modal-title">Edit Tab Color Rule</h2>
+        <h2 id="modal-title" class="modal-title">Regel bearbeiten</h2>
         <button id="modal-close" class="close-btn">&times;</button>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="inp-name">Rule Name / Label</label>
-        <input type="text" id="inp-name" class="form-input" placeholder="e.g. Production Service, Staging API">
+        <label class="form-label" for="inp-name">Regel-Name / Label</label>
+        <input type="text" id="inp-name" class="form-input" placeholder="z. B. Production Service, Staging API">
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="inp-type">Match Type</label>
+        <label class="form-label" for="inp-type">Match-Typ</label>
         <select id="inp-type" class="form-select">
-          <option value="domain">Domain (Matches domain and all subdomains)</option>
-          <option value="exact_host">Exact Host (Only this exact host/subdomain, e.g. 248924.4.whomsann.de)</option>
-          <option value="wildcard">Wildcard (e.g. *.staging.com/*, localhost:*)</option>
-          <option value="prefix">Prefix (e.g. https://prod.example.com/)</option>
-          <option value="regex">Regular Expression (e.g. ^https?:\/\/(prod|live)\..*)</option>
-          <option value="exact">Exact URL (Full address equality)</option>
+          <option value="domain">Domain (Gleicht Domain &amp; alle Subdomains ab)</option>
+          <option value="exact_host">Exact Host (Nur exakt dieser Hostname, z. B. app.staging.internal.net)</option>
+          <option value="wildcard">Wildcard (z. B. *.staging.com/*, localhost:*)</option>
+          <option value="prefix">Prefix (z. B. https://prod.example.com/)</option>
+          <option value="regex">RegEx (z. B. ^https?:\/\/(prod|live)\..*)</option>
+          <option value="exact">Exakte URL (Volle Gleichheit)</option>
         </select>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="inp-pattern">URL Pattern</label>
-        <input type="text" id="inp-pattern" class="form-input" style="font-family: monospace;" placeholder="e.g. github.com or *.staging.internal/*">
+        <label class="form-label" for="inp-pattern">URL-Pattern</label>
+        <input type="text" id="inp-pattern" class="form-input" style="font-family: monospace;" placeholder="z. B. github.com oder *.internal/*">
         <div id="pattern-hint" class="form-hint">Matches exact domain and any subdomains.</div>
       </div>
 
       <div class="form-group">
-        <label class="form-label">Firefox Container Color</label>
-        <div class="color-grid" id="color-grid">
-          <button type="button" class="color-opt" data-color="blue" data-hex="#37adff" style="background:#37adff;">Blue</button>
-          <button type="button" class="color-opt" data-color="turquoise" data-hex="#00c79a" style="background:#00c79a;">Turquoise</button>
-          <button type="button" class="color-opt" data-color="green" data-hex="#51cf66" style="background:#51cf66;">Green</button>
-          <button type="button" class="color-opt" data-color="yellow" data-hex="#ffcb00" style="background:#ffcb00; color:#000;">Yellow</button>
-          <button type="button" class="color-opt" data-color="orange" data-hex="#ff9400" style="background:#ff9400;">Orange</button>
-          <button type="button" class="color-opt" data-color="red" data-hex="#ff4f5e" style="background:#ff4f5e;">Red</button>
-          <button type="button" class="color-opt" data-color="pink" data-hex="#ff4ba0" style="background:#ff4ba0;">Pink</button>
-          <button type="button" class="color-opt" data-color="purple" data-hex="#9059ff" style="background:#9059ff;">Purple</button>
+        <label class="form-label">Firefox Container-Farbe</label>
+        <div class="color-swatch-grid" id="modal-color-grid">
+          <button type="button" class="swatch-btn" data-color="blue" data-hex="#37adff" style="background:#37adff;">Blue</button>
+          <button type="button" class="swatch-btn" data-color="turquoise" data-hex="#00c79a" style="background:#00c79a;">Turquoise</button>
+          <button type="button" class="swatch-btn" data-color="green" data-hex="#51cf66" style="background:#51cf66;">Green</button>
+          <button type="button" class="swatch-btn" data-color="yellow" data-hex="#ffcb00" style="background:#ffcb00; color:#000;">Yellow</button>
+          <button type="button" class="swatch-btn" data-color="orange" data-hex="#ff9400" style="background:#ff9400;">Orange</button>
+          <button type="button" class="swatch-btn" data-color="red" data-hex="#ff4f5e" style="background:#ff4f5e;">Red</button>
+          <button type="button" class="swatch-btn" data-color="pink" data-hex="#ff4ba0" style="background:#ff4ba0;">Pink</button>
+          <button type="button" class="swatch-btn" data-color="purple" data-hex="#9059ff" style="background:#9059ff;">Purple</button>
         </div>
-        <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
-          <span style="font-size:12px; color:#94a3b8;">Custom Hex:</span>
-          <input type="text" id="inp-hex" class="form-input" style="width:100px; font-family:monospace;" value="#ff4f5e">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:11px; color:#94a3b8;">Custom Hex:</span>
+          <input type="text" id="inp-hex" class="form-input" style="width:90px; font-family:monospace;" value="#ff4f5e">
         </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="inp-container-name">Container Name</label>
-        <input type="text" id="inp-container-name" class="form-input" placeholder="e.g. Production [Red], Work">
-        <div class="form-hint">Displayed in the Firefox address bar container pill.</div>
+        <label class="form-label" for="inp-container-name">Container-Name</label>
+        <input type="text" id="inp-container-name" class="form-input" placeholder="z. B. Production, Work">
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Custom Tab Symbol / Emoji (e.g. ⬇️ for Import)</label>
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
-          <input type="text" id="inp-emoji" class="form-input" style="width:72px; text-align:center; font-size:16px;" placeholder="⬇️">
-          <button type="button" id="btn-clear-emoji" class="btn btn-secondary" style="padding:5px 10px; font-size:12px; color:#f43f5e;" title="Symbol entfernen">✕ Symbol entfernen</button>
+      <!-- Custom Tab Symbol / Emoji mit Favicon & Title Checkboxen -->
+      <div class="form-group" style="background:#182234; border:1px solid #283548; padding:12px; border-radius:8px;">
+        <label class="form-label" style="color:#38bdf8;">Tab-Symbol / Emoji Konfiguration</label>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+          <input type="text" id="inp-emoji" class="form-input" style="width:70px; text-align:center; font-size:16px;" placeholder="⬇️">
+          <button type="button" id="btn-clear-emoji" class="btn btn-secondary" style="padding:4px 8px; font-size:11px; color:#f43f5e;" title="Symbol entfernen">✕ Symbol entfernen</button>
           <div style="display:flex; gap:4px; flex-wrap:wrap;">
-            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬇️" style="padding:4px 8px; font-size:12px;">⬇️ Import</button>
-            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬆️" style="padding:4px 8px; font-size:12px;">⬆️ Export</button>
-            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="📥" style="padding:4px 8px; font-size:12px;">📥 Inbox</button>
-            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="📦" style="padding:4px 8px; font-size:12px;">📦 Paket</button>
-            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="🚀" style="padding:4px 8px; font-size:12px;">🚀 Prod</button>
-            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⚡" style="padding:4px 8px; font-size:12px;">⚡ Dev</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬇️" style="padding:4px 7px; font-size:11px;">⬇️ Import</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬆️" style="padding:4px 7px; font-size:11px;">⬆️ Export</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="📥" style="padding:4px 7px; font-size:11px;">📥 Inbox</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="📦" style="padding:4px 7px; font-size:11px;">📦 Paket</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="🚀" style="padding:4px 7px; font-size:11px;">🚀 Deploy</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⚡" style="padding:4px 7px; font-size:11px;">⚡ Dev</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="🔒" style="padding:4px 7px; font-size:11px;">🔒 Auth</button>
+            <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="🛒" style="padding:4px 7px; font-size:11px;">🛒 Shop</button>
           </div>
         </div>
-        <div class="form-hint">Custom symbol prepended to the tab title, favicon, and container name (can be removed anytime).</div>
+
+        <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid #283548;">
+          <label class="check-label" style="margin-bottom:0;">
+            <input type="checkbox" id="inp-enable-favicon-emoji" checked>
+            <div>
+              <strong>Symbol als Tab-Favicon darstellen (Icon als Favicon / Favicon-Badge)</strong>
+              <span>Rendert das gewählte Symbol als dynamisches rundes Favicon-Badge in den Firefox Tab.</span>
+            </div>
+          </label>
+          <label class="check-label" style="margin-bottom:0;">
+            <input type="checkbox" id="inp-enable-title-emoji" checked>
+            <div>
+              <strong>Symbol im Tab-Titel voranstellen</strong>
+              <span>Setzt das Symbol vor den Tab-Titel (z. B. 🚀 Dashboard).</span>
+            </div>
+          </label>
+        </div>
       </div>
 
       <div class="form-group">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-          <label class="form-label" style="margin-bottom:0;">Firefox Container Icon Picker</label>
-          <span id="icon-selected-label" style="font-size:11px; color:#38bdf8; font-weight:600;">● Circle</span>
-        </div>
+        <label class="form-label">Firefox Container-Icon</label>
         <input type="hidden" id="inp-icon" value="circle">
-        <div class="icon-grid" id="icon-grid">
-          <button type="button" class="icon-btn" data-icon="circle" data-label="Circle"><span class="icon-sym">●</span><span class="icon-lbl">Circle</span></button>
-          <button type="button" class="icon-btn" data-icon="briefcase" data-label="Briefcase"><span class="icon-sym">💼</span><span class="icon-lbl">Briefcase</span></button>
-          <button type="button" class="icon-btn" data-icon="fingerprint" data-label="Security"><span class="icon-sym">🔒</span><span class="icon-lbl">Security</span></button>
-          <button type="button" class="icon-btn" data-icon="dollar" data-label="Finance"><span class="icon-sym">💰</span><span class="icon-lbl">Finance</span></button>
-          <button type="button" class="icon-btn" data-icon="cart" data-label="Shopping"><span class="icon-sym">🛒</span><span class="icon-lbl">Shopping</span></button>
-          <button type="button" class="icon-btn" data-icon="tree" data-label="Dev / Tree"><span class="icon-sym">🌲</span><span class="icon-lbl">Dev / Tree</span></button>
-          <button type="button" class="icon-btn" data-icon="chill" data-label="Chill"><span class="icon-sym">☕</span><span class="icon-lbl">Chill</span></button>
-          <button type="button" class="icon-btn" data-icon="vacation" data-label="Vacation"><span class="icon-sym">🏖️</span><span class="icon-lbl">Vacation</span></button>
-          <button type="button" class="icon-btn" data-icon="food" data-label="Food"><span class="icon-sym">🍔</span><span class="icon-lbl">Food</span></button>
-          <button type="button" class="icon-btn" data-icon="fruit" data-label="Fruit"><span class="icon-sym">🍎</span><span class="icon-lbl">Fruit</span></button>
-          <button type="button" class="icon-btn" data-icon="pet" data-label="Pet"><span class="icon-sym">🐾</span><span class="icon-lbl">Pet</span></button>
-          <button type="button" class="icon-btn" data-icon="gift" data-label="Gift"><span class="icon-sym">🎁</span><span class="icon-lbl">Gift</span></button>
+        <div class="icon-grid" id="modal-icon-grid">
+          <button type="button" class="icon-btn" data-icon="circle"><span class="icon-sym">●</span><span class="icon-lbl">Circle</span></button>
+          <button type="button" class="icon-btn" data-icon="briefcase"><span class="icon-sym">💼</span><span class="icon-lbl">Briefcase</span></button>
+          <button type="button" class="icon-btn" data-icon="fingerprint"><span class="icon-sym">🔒</span><span class="icon-lbl">Security</span></button>
+          <button type="button" class="icon-btn" data-icon="dollar"><span class="icon-sym">💰</span><span class="icon-lbl">Finance</span></button>
+          <button type="button" class="icon-btn" data-icon="cart"><span class="icon-sym">🛒</span><span class="icon-lbl">Shopping</span></button>
+          <button type="button" class="icon-btn" data-icon="tree"><span class="icon-sym">🌲</span><span class="icon-lbl">Tree</span></button>
+          <button type="button" class="icon-btn" data-icon="chill"><span class="icon-sym">☕</span><span class="icon-lbl">Chill</span></button>
+          <button type="button" class="icon-btn" data-icon="vacation"><span class="icon-sym">🏖️</span><span class="icon-lbl">Vacation</span></button>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="inp-mode">Coloring Mode</label>
+        <label class="form-label" for="inp-mode">Farbmodus</label>
         <select id="inp-mode" class="form-select">
-          <option value="hybrid">Hybrid (Container Tab Stripe + Dynamic Window Theme)</option>
-          <option value="container">Container Tab Only (Native stripe and cookie isolation)</option>
-          <option value="theme">Active Theme Only (Tints browser tab bar when active)</option>
+          <option value="container">Nur Container (Farbiger Tab-Strich &amp; Cookie-Isolation)</option>
+          <option value="hybrid">Hybrid (Container Tab + Dynamisches Window Theme)</option>
+          <option value="theme">Nur aktives Theme (Färbt Tab-Leiste)</option>
         </select>
       </div>
 
-      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="inp-topbar" checked style="cursor:pointer;">
-        <label for="inp-topbar" style="font-size:12px; color:#cbd5e1; cursor:pointer;">
-          Show 3px colored accent stripe across the top of matching web pages
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label class="check-label" style="margin-bottom:0;">
+          <input type="checkbox" id="inp-topbar" checked>
+          <span>3px farbige Akzentleiste am Seitenrand anzeigen</span>
+        </label>
+        <label class="check-label" style="margin-bottom:0;">
+          <input type="checkbox" id="inp-enabled" checked>
+          <span>Regel aktivieren</span>
         </label>
       </div>
 
-      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="inp-enabled" checked style="cursor:pointer;">
-        <label for="inp-enabled" style="font-size:12px; color:#cbd5e1; cursor:pointer;">
-          Enable this rule
-        </label>
-      </div>
-
-      <div class="preview-box">
-        <div style="font-size:11px; text-transform:uppercase; color:#94a3b8; font-weight:700; margin-bottom:8px;">Tab Preview</div>
-        <div id="preview-tab-elem" class="preview-tab">
-          <span>🦊</span>
-          <span id="preview-name-text">Rule Name</span>
+      <!-- Live Tab Preview -->
+      <div class="preview-card">
+        <div class="preview-header">
+          <span>Vorschau: So wird der Tab in Firefox dargestellt</span>
+          <span id="preview-mode-tag" style="color:#38bdf8;">Container</span>
+        </div>
+        <div class="sim-tab-bar">
+          <div id="sim-tab-elem" class="sim-tab">
+            <div id="sim-favicon-elem" class="sim-favicon">🌐</div>
+            <span id="sim-title-elem" class="sim-title">Tab Vorschau</span>
+            <span id="sim-pill-elem" class="sim-pill">Default</span>
+          </div>
         </div>
       </div>
 
       <div class="modal-footer">
-        <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
-        <button id="modal-save" class="btn btn-primary">Save Rule</button>
+        <button id="modal-cancel" class="btn btn-secondary">Abbrechen</button>
+        <button id="modal-save" class="btn btn-primary">Regel speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Rules Modal (Distinct & Conflict Management) -->
+  <div id="import-modal-overlay" class="modal-overlay">
+    <div class="modal" style="max-width: 660px;">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title">URL-Regeln importieren (Distinct &amp; Konfliktprüfung)</h2>
+          <div style="font-size:11px; color:#94a3b8;">Regeln werden anhand von Pattern-Typ &amp; Pattern eindeutig abgeglichen</div>
+        </div>
+        <button id="import-modal-close" class="close-btn">&times;</button>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="tab-nav">
+        <button id="tab-btn-file" class="tab-nav-btn active">📁 JSON-Datei hochladen</button>
+        <button id="tab-btn-text" class="tab-nav-btn">📝 JSON-Text einfügen</button>
+      </div>
+
+      <!-- Tab Content File -->
+      <div id="tab-content-file">
+        <div style="border: 2px dashed #374151; border-radius: 8px; padding: 20px; text-align: center; background:#1e293b; cursor:pointer;" id="drop-zone">
+          <div style="font-size:24px; margin-bottom:6px;">📄</div>
+          <div style="font-weight:600; color:#f8fafc; font-size:13px;">JSON-Datei auswählen</div>
+          <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Klicken oder .json Datei hierhin ziehen</div>
+          <input type="file" id="import-file-input" accept=".json" style="display:none;">
+          <div id="import-file-name" style="font-size:11px; color:#38bdf8; margin-top:8px; font-weight:700;"></div>
+        </div>
+      </div>
+
+      <!-- Tab Content Text -->
+      <div id="tab-content-text" style="display:none;">
+        <textarea id="import-textarea" class="form-textarea" rows="6" placeholder='[ { "name": "Prod", "patternType": "domain", "pattern": "app.com", "color": "#ff4f5e" } ]'></textarea>
+      </div>
+
+      <!-- Error Message -->
+      <div id="import-error" style="background:#7f1d1d; border:1px solid #ef4444; color:#fecaca; padding:8px 12px; border-radius:6px; font-size:11px; margin-top:10px; display:none;"></div>
+
+      <!-- Analysis Results & Conflict Resolution -->
+      <div id="import-analysis" style="display:none; margin-top:14px;">
+        <div class="stats-card">
+          <div style="font-weight:700; color:#38bdf8; margin-bottom:4px;" id="import-stats-title">Analyse-Ergebnis</div>
+          <div id="import-stats-desc" style="color:#cbd5e1; font-size:11px;"></div>
+        </div>
+
+        <div style="background:#182234; border:1px solid #283548; border-radius:8px; padding:12px; margin-bottom:12px;">
+          <div style="font-size:11px; font-weight:700; color:#cbd5e1; text-transform:uppercase; margin-bottom:8px;">Aktion bei doppelten Regeln (Konflikten):</div>
+          
+          <label class="check-label" style="margin-bottom:6px;">
+            <input type="radio" name="conflict-mode" value="update_conflicts" checked>
+            <div>
+              <strong style="color:#38bdf8;">Bestehende Regeln aktualisieren (Update)</strong>
+              <span>Aktualisiert Farbe, Container, Symbole bestehender Regeln und fügt neue Regeln hinzu.</span>
+            </div>
+          </label>
+
+          <label class="check-label" style="margin-bottom:6px;">
+            <input type="radio" name="conflict-mode" value="keep_existing">
+            <div>
+              <strong>Bestehende Regeln beibehalten / Konflikte ignorieren</strong>
+              <span>Vorhandene Regeln bleiben unberührt, nur komplett neue Regeln werden ergänzt.</span>
+            </div>
+          </label>
+
+          <label class="check-label" style="margin-bottom:0;">
+            <input type="radio" name="conflict-mode" value="replace_all">
+            <div>
+              <strong style="color:#f43f5e;">Alle bestehenden Regeln überschreiben</strong>
+              <span>Ersetzt die gesamte Regelliste durch den importierten Datensatz.</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- Force defaults checkbox -->
+        <label class="check-label" style="background:#182234; border:1px solid #283548; border-radius:8px; padding:10px 12px;">
+          <input type="checkbox" id="import-force-defaults">
+          <div>
+            <strong>Standard-Farbschema auf importierte Regeln anwenden</strong>
+            <span id="import-defaults-hint">Verwendet Standard-Farbe &amp; Container</span>
+          </div>
+        </label>
+
+        <!-- Collapsible Conflict List -->
+        <div id="conflict-list-container" style="display:none; margin-top:10px;">
+          <div style="font-size:11px; font-weight:700; color:#f59e0b;">Erkannte Konflikte:</div>
+          <div class="conflict-box" id="conflict-items"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="import-cancel" class="btn btn-secondary">Abbrechen</button>
+        <button id="import-execute" class="btn btn-primary" disabled>Regeln importieren</button>
       </div>
     </div>
   </div>
@@ -978,13 +1257,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 7. options.js
   const optionsJs = `/**
- * TabChroma - Options Page Script
- * Full Edit, Create, Delete, and Priority Manager
+ * TabChroma - Firefox URL Tab Color Studio
+ * Options Script with Standard-Einstellungen, Edit Modal & Distinct Import
  */
 
 const DEFAULT_CONFIG = ${JSON.stringify(config, null, 2)};
-let appConfig = DEFAULT_CONFIG;
-let editingRuleIndex = -1; // -1 means creating new rule
+let appConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+let editingRuleIndex = -1;
 
 const hexMap = {
   blue: '#37adff',
@@ -997,48 +1276,181 @@ const hexMap = {
   purple: '#9059ff',
 };
 
+const iconSymbols = {
+  circle: '●', briefcase: '💼', fingerprint: '🔒', dollar: '💰', cart: '🛒',
+  tree: '🌲', chill: '☕', vacation: '🏖️', food: '🍔', fruit: '🍎', pet: '🐾', gift: '🎁'
+};
+
+// -------------------------------------------------------------
+// Configuration & Storage
+// -------------------------------------------------------------
 async function loadConfig() {
   try {
     const data = await browser.storage.local.get(['tabChromaConfig']);
-    if (data && data.tabChromaConfig && data.tabChromaConfig.rules) {
-      appConfig = data.tabChromaConfig;
+    if (data && data.tabChromaConfig) {
+      appConfig = { ...DEFAULT_CONFIG, ...data.tabChromaConfig };
     } else {
       const response = await browser.runtime.sendMessage({ action: 'GET_CONFIG' });
       if (response && response.rules) {
-        appConfig = response;
+        appConfig = { ...DEFAULT_CONFIG, ...response };
       }
     }
   } catch (e) {
-    console.warn('[TabChroma] Fallback to embedded rules:', e);
+    console.warn('[TabChroma] Fallback to defaults:', e);
   }
-  if (!appConfig) appConfig = DEFAULT_CONFIG;
-  if (!appConfig.rules) appConfig.rules = [];
+
+  if (!appConfig.rules) appConfig.rules = DEFAULT_CONFIG.rules || [];
+  if (!appConfig.defaultColor) appConfig.defaultColor = DEFAULT_CONFIG.defaultColor || '#37adff';
+  if (!appConfig.defaultContainerColor) appConfig.defaultContainerColor = DEFAULT_CONFIG.defaultContainerColor || 'blue';
+  if (!appConfig.defaultMode) appConfig.defaultMode = DEFAULT_CONFIG.defaultMode || 'container';
+
+  renderDefaultsCard();
   renderRules();
 }
 
+async function saveConfigToStorage() {
+  try {
+    await browser.storage.local.set({ tabChromaConfig: appConfig });
+  } catch (e) {}
+  try {
+    await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
+  } catch (e) {}
+}
+
+// -------------------------------------------------------------
+// Defaults Card (Standard-Einstellungen & Farbschema)
+// -------------------------------------------------------------
+function renderDefaultsCard() {
+  const defHex = document.getElementById('def-hex');
+  const defPicker = document.getElementById('def-picker');
+  const defActiveTheme = document.getElementById('def-active-theme');
+  const defRevertUnmatched = document.getElementById('def-revert-unmatched');
+  const defEnableTopbar = document.getElementById('def-enable-topbar');
+
+  if (defHex) defHex.value = appConfig.defaultColor || '#37adff';
+  if (defPicker) defPicker.value = (appConfig.defaultColor && appConfig.defaultColor.startsWith('#')) ? appConfig.defaultColor : '#37adff';
+
+  // Highlight active default container color swatch
+  document.querySelectorAll('#def-color-grid .swatch-btn').forEach((btn) => {
+    if (btn.getAttribute('data-color') === appConfig.defaultContainerColor) {
+      btn.classList.add('selected');
+    } else {
+      btn.classList.remove('selected');
+    }
+  });
+
+  // Mode radio cards
+  const modeContainer = document.getElementById('mode-opt-container');
+  const modeHybrid = document.getElementById('mode-opt-hybrid');
+  if (appConfig.defaultMode === 'hybrid') {
+    modeHybrid?.classList.add('selected');
+    modeContainer?.classList.remove('selected');
+  } else {
+    modeContainer?.classList.add('selected');
+    modeHybrid?.classList.remove('selected');
+  }
+
+  if (defActiveTheme) defActiveTheme.checked = !!appConfig.enableActiveTabTheme;
+  if (defRevertUnmatched) defRevertUnmatched.checked = appConfig.revertUnmatchedToDefault !== false;
+  if (defEnableTopbar) defEnableTopbar.checked = appConfig.enablePageTopBar !== false;
+}
+
+// Defaults listeners
+document.querySelectorAll('#def-color-grid .swatch-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const col = btn.getAttribute('data-color');
+    const hex = btn.getAttribute('data-hex') || hexMap[col] || '#37adff';
+    appConfig.defaultContainerColor = col;
+    appConfig.defaultColor = hex;
+    renderDefaultsCard();
+  });
+});
+
+document.getElementById('def-picker')?.addEventListener('input', (e) => {
+  appConfig.defaultColor = e.target.value;
+  const defHex = document.getElementById('def-hex');
+  if (defHex) defHex.value = e.target.value;
+});
+
+document.getElementById('def-hex')?.addEventListener('input', (e) => {
+  const val = e.target.value.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+    appConfig.defaultColor = val;
+    const defPicker = document.getElementById('def-picker');
+    if (defPicker) defPicker.value = val;
+  }
+});
+
+document.getElementById('mode-opt-container')?.addEventListener('click', () => {
+  appConfig.defaultMode = 'container';
+  renderDefaultsCard();
+});
+
+document.getElementById('mode-opt-hybrid')?.addEventListener('click', () => {
+  appConfig.defaultMode = 'hybrid';
+  renderDefaultsCard();
+});
+
+document.getElementById('btn-save-defaults')?.addEventListener('click', async () => {
+  const defHex = document.getElementById('def-hex');
+  const defActiveTheme = document.getElementById('def-active-theme');
+  const defRevertUnmatched = document.getElementById('def-revert-unmatched');
+  const defEnableTopbar = document.getElementById('def-enable-topbar');
+
+  if (defHex && defHex.value.trim()) {
+    appConfig.defaultColor = defHex.value.trim();
+  }
+  if (defActiveTheme) appConfig.enableActiveTabTheme = defActiveTheme.checked;
+  if (defRevertUnmatched) appConfig.revertUnmatchedToDefault = defRevertUnmatched.checked;
+  if (defEnableTopbar) appConfig.enablePageTopBar = defEnableTopbar.checked;
+
+  await saveConfigToStorage();
+
+  const feedback = document.getElementById('defaults-feedback');
+  if (feedback) {
+    feedback.style.display = 'inline';
+    setTimeout(() => { feedback.style.display = 'none'; }, 3000);
+  }
+});
+
+document.getElementById('btn-reset-defaults')?.addEventListener('click', async () => {
+  if (confirm('Möchten Sie alle Standard-Einstellungen und Dummy-Regeln auf die Werkseinstellungen zurücksetzen?')) {
+    appConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    await saveConfigToStorage();
+    renderDefaultsCard();
+    renderRules();
+  }
+});
+
+// -------------------------------------------------------------
+// Rules Table
+// -------------------------------------------------------------
 function renderRules() {
   const tbody = document.getElementById('rules-body');
+  const countPill = document.getElementById('rules-count-pill');
   if (!tbody) return;
 
   tbody.textContent = '';
+  const rules = appConfig.rules || [];
+  if (countPill) countPill.textContent = rules.length + ' Regeln';
 
-  if (!appConfig || !appConfig.rules || appConfig.rules.length === 0) {
+  if (rules.length === 0) {
     const emptyTr = document.createElement('tr');
     const emptyTd = document.createElement('td');
     emptyTd.colSpan = 8;
     emptyTd.style.textAlign = 'center';
     emptyTd.style.padding = '36px';
     emptyTd.style.color = '#64748b';
-    emptyTd.textContent = 'No rules configured. Click "+ Add New Rule" to create one.';
+    emptyTd.textContent = 'Keine Regeln konfiguriert. Klicken Sie auf "+ Neue Regel erstellen", um eine hinzuzufügen.';
     emptyTr.appendChild(emptyTd);
     tbody.appendChild(emptyTr);
     return;
   }
 
-  appConfig.rules.forEach((rule, idx) => {
+  rules.forEach((rule, idx) => {
     const tr = document.createElement('tr');
 
-    // 1. Priority controls
+    // 1. Priority
     const tdPriority = document.createElement('td');
     const pContainer = document.createElement('div');
     pContainer.style.display = 'flex';
@@ -1056,7 +1468,7 @@ function renderRules() {
       const upBtn = document.createElement('button');
       upBtn.className = 'priority-btn';
       upBtn.textContent = '▲';
-      upBtn.title = 'Move Up';
+      upBtn.title = 'Nach oben';
       upBtn.addEventListener('click', async () => {
         const temp = appConfig.rules[idx];
         appConfig.rules[idx] = appConfig.rules[idx - 1];
@@ -1068,11 +1480,11 @@ function renderRules() {
       pContainer.appendChild(upBtn);
     }
 
-    if (idx < appConfig.rules.length - 1) {
+    if (idx < rules.length - 1) {
       const downBtn = document.createElement('button');
       downBtn.className = 'priority-btn';
       downBtn.textContent = '▼';
-      downBtn.title = 'Move Down';
+      downBtn.title = 'Nach unten';
       downBtn.addEventListener('click', async () => {
         const temp = appConfig.rules[idx];
         appConfig.rules[idx] = appConfig.rules[idx + 1];
@@ -1087,7 +1499,7 @@ function renderRules() {
     tdPriority.appendChild(pContainer);
     tr.appendChild(tdPriority);
 
-    // 2. Color swatch
+    // 2. Color
     const tdColor = document.createElement('td');
     const swatch = document.createElement('span');
     swatch.className = 'color-swatch';
@@ -1096,16 +1508,38 @@ function renderRules() {
     tdColor.appendChild(document.createTextNode(rule.firefoxContainerColor || 'blue'));
     tr.appendChild(tdColor);
 
-    // 3. Name (clickable to edit)
+    // 3. Name & Symbol
     const tdName = document.createElement('td');
     tdName.style.fontWeight = '600';
     tdName.style.cursor = 'pointer';
-    tdName.title = 'Click to edit rule';
-    tdName.textContent = rule.name || '';
-    tdName.addEventListener('click', () => openModal(idx));
+    tdName.addEventListener('click', () => openRuleModal(idx));
+
+    if (rule.customEmoji) {
+      const symSpan = document.createElement('span');
+      symSpan.style.marginRight = '6px';
+      symSpan.textContent = rule.customEmoji;
+      tdName.appendChild(symSpan);
+    }
+    tdName.appendChild(document.createTextNode(rule.name || rule.pattern));
+
+    if (rule.customEmoji) {
+      if (rule.enableFaviconEmoji !== false) {
+        const fBadge = document.createElement('span');
+        fBadge.className = 'badge-sym';
+        fBadge.textContent = 'Favicon';
+        tdName.appendChild(fBadge);
+      }
+      if (rule.enableTitleEmoji !== false) {
+        const tBadge = document.createElement('span');
+        tBadge.className = 'badge-sym';
+        tBadge.style.backgroundColor = '#d97706';
+        tBadge.textContent = 'Titel';
+        tdName.appendChild(tBadge);
+      }
+    }
     tr.appendChild(tdName);
 
-    // 4. Pattern type badge
+    // 4. Match type
     const tdType = document.createElement('td');
     const badge = document.createElement('span');
     badge.className = 'badge';
@@ -1113,7 +1547,7 @@ function renderRules() {
     tdType.appendChild(badge);
     tr.appendChild(tdType);
 
-    // 5. Pattern code
+    // 5. Pattern
     const tdPattern = document.createElement('td');
     const code = document.createElement('code');
     code.className = 'pattern-code';
@@ -1123,8 +1557,8 @@ function renderRules() {
 
     // 6. Container
     const tdContainer = document.createElement('td');
-    const sym = iconSymbols[rule.firefoxContainerIcon || 'circle'] || '●';
-    tdContainer.textContent = sym + ' ' + (rule.containerName || '-');
+    const iconSym = iconSymbols[rule.firefoxContainerIcon || 'circle'] || '●';
+    tdContainer.textContent = iconSym + ' ' + (rule.containerName || '-');
     tr.appendChild(tdContainer);
 
     // 7. Status
@@ -1133,10 +1567,10 @@ function renderRules() {
     statusBtn.style.cursor = 'pointer';
     if (rule.enabled) {
       statusBtn.style.color = '#10b981';
-      statusBtn.textContent = '● Enabled';
+      statusBtn.textContent = '● Aktiv';
     } else {
       statusBtn.style.color = '#64748b';
-      statusBtn.textContent = '○ Disabled';
+      statusBtn.textContent = '○ Deaktiviert';
     }
     statusBtn.addEventListener('click', async () => {
       rule.enabled = !rule.enabled;
@@ -1146,25 +1580,21 @@ function renderRules() {
     tdStatus.appendChild(statusBtn);
     tr.appendChild(tdStatus);
 
-    // 8. Actions (EDIT + DELETE)
+    // 8. Actions
     const tdAction = document.createElement('td');
     tdAction.className = 'btn-cell';
 
-    // Prominent EDIT button
     const editBtn = document.createElement('button');
     editBtn.className = 'edit-btn';
-    editBtn.textContent = 'Edit';
-    editBtn.title = 'Edit this rule';
-    editBtn.addEventListener('click', () => openModal(idx));
+    editBtn.textContent = 'Bearbeiten';
+    editBtn.addEventListener('click', () => openRuleModal(idx));
     tdAction.appendChild(editBtn);
 
-    // DELETE button
     const delBtn = document.createElement('button');
     delBtn.className = 'del-btn';
-    delBtn.textContent = 'Delete';
-    delBtn.title = 'Delete this rule';
+    delBtn.textContent = 'Löschen';
     delBtn.addEventListener('click', async () => {
-      if (confirm('Delete rule "' + (rule.name || rule.pattern) + '"?')) {
+      if (confirm('Regel "' + (rule.name || rule.pattern) + '" wirklich löschen?')) {
         appConfig.rules.splice(idx, 1);
         appConfig.rules.forEach((r, i) => r.priority = i + 1);
         await saveConfigToStorage();
@@ -1178,41 +1608,14 @@ function renderRules() {
   });
 }
 
-async function saveConfigToStorage() {
-  try {
-    await browser.storage.local.set({ tabChromaConfig: appConfig });
-  } catch (e) {}
-  try {
-    await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config: appConfig });
-  } catch (e) {}
-}
+// -------------------------------------------------------------
+// Rule Edit & Create Modal
+// -------------------------------------------------------------
+let selectedModalColor = 'red';
+let selectedModalHex = '#ff4f5e';
+let selectedModalIcon = 'circle';
 
-// Modal handling
-let selectedColorName = 'red';
-let selectedColorHex = '#ff4f5e';
-let selectedIcon = 'circle';
-
-const iconSymbols = {
-  circle: '●', briefcase: '💼', fingerprint: '🔒', dollar: '💰', cart: '🛒',
-  tree: '🌲', chill: '☕', vacation: '🏖️', food: '🍔', fruit: '🍎', pet: '🐾', gift: '🎁'
-};
-
-function updateIconButtons() {
-  document.querySelectorAll('.icon-btn').forEach((btn) => {
-    if (btn.getAttribute('data-icon') === selectedIcon) {
-      btn.classList.add('selected');
-    } else {
-      btn.classList.remove('selected');
-    }
-  });
-  const lbl = document.getElementById('icon-selected-label');
-  if (lbl) {
-    const sym = iconSymbols[selectedIcon] || '●';
-    lbl.textContent = sym + ' ' + selectedIcon.charAt(0).toUpperCase() + selectedIcon.slice(1);
-  }
-}
-
-function openModal(index) {
+function openRuleModal(index) {
   editingRuleIndex = index;
   const overlay = document.getElementById('modal-overlay');
   const title = document.getElementById('modal-title');
@@ -1222,6 +1625,8 @@ function openModal(index) {
   const inpHex = document.getElementById('inp-hex');
   const inpContainerName = document.getElementById('inp-container-name');
   const inpEmoji = document.getElementById('inp-emoji');
+  const inpEnableFavicon = document.getElementById('inp-enable-favicon-emoji');
+  const inpEnableTitle = document.getElementById('inp-enable-title-emoji');
   const inpIcon = document.getElementById('inp-icon');
   const inpMode = document.getElementById('inp-mode');
   const inpTopBar = document.getElementById('inp-topbar');
@@ -1229,55 +1634,55 @@ function openModal(index) {
 
   if (index >= 0) {
     const rule = appConfig.rules[index];
-    title.textContent = 'Edit Rule: ' + (rule.name || rule.pattern);
+    title.textContent = 'Regel bearbeiten: ' + (rule.name || rule.pattern);
     inpName.value = rule.name || '';
     inpType.value = rule.patternType || 'domain';
     inpPattern.value = rule.pattern || '';
-    inpHex.value = rule.color || '#ff4f5e';
-    selectedColorName = rule.firefoxContainerColor || 'red';
-    selectedColorHex = rule.color || '#ff4f5e';
-    selectedIcon = rule.firefoxContainerIcon || 'circle';
-    inpIcon.value = selectedIcon;
+    selectedModalColor = rule.firefoxContainerColor || 'red';
+    selectedModalHex = rule.color || hexMap[selectedModalColor] || '#ff4f5e';
+    inpHex.value = selectedModalHex;
     inpContainerName.value = rule.containerName || rule.name || '';
     if (inpEmoji) inpEmoji.value = rule.customEmoji || '';
-    inpMode.value = rule.colorMode || 'hybrid';
+    if (inpEnableFavicon) inpEnableFavicon.checked = rule.enableFaviconEmoji !== false;
+    if (inpEnableTitle) inpEnableTitle.checked = rule.enableTitleEmoji !== false;
+    selectedModalIcon = rule.firefoxContainerIcon || 'circle';
+    inpIcon.value = selectedModalIcon;
+    inpMode.value = rule.colorMode || 'container';
     inpTopBar.checked = rule.accentBorder !== false;
     inpEnabled.checked = rule.enabled !== false;
   } else {
-    title.textContent = 'Create New Tab Color Rule';
+    title.textContent = 'Neue Tab-Farbregel erstellen';
     inpName.value = '';
     inpType.value = 'domain';
     inpPattern.value = '';
-    const defColor = appConfig.defaultColor || '#37adff';
-    const defContainer = appConfig.defaultContainerColor || 'blue';
-    const defMode = appConfig.defaultMode || 'container';
-    inpHex.value = defColor;
-    selectedColorName = defContainer;
-    selectedColorHex = defColor;
-    selectedIcon = 'circle';
-    inpIcon.value = selectedIcon;
+    selectedModalColor = appConfig.defaultContainerColor || 'blue';
+    selectedModalHex = appConfig.defaultColor || '#37adff';
+    inpHex.value = selectedModalHex;
     inpContainerName.value = '';
     if (inpEmoji) inpEmoji.value = '';
-    inpMode.value = defMode;
+    if (inpEnableFavicon) inpEnableFavicon.checked = true;
+    if (inpEnableTitle) inpEnableTitle.checked = true;
+    selectedModalIcon = 'circle';
+    inpIcon.value = selectedModalIcon;
+    inpMode.value = appConfig.defaultMode || 'container';
     inpTopBar.checked = true;
     inpEnabled.checked = true;
   }
 
-  updateColorButtons();
-  updateIconButtons();
-  updatePreview();
-  overlay.classList.add('active');
+  updateModalColorButtons();
+  updateModalIconButtons();
+  updateModalPreview();
+  overlay?.classList.add('active');
 }
 
-function closeModal() {
-  const overlay = document.getElementById('modal-overlay');
-  overlay.classList.remove('active');
+function closeRuleModal() {
+  document.getElementById('modal-overlay')?.classList.remove('active');
   editingRuleIndex = -1;
 }
 
-function updateColorButtons() {
-  document.querySelectorAll('.color-opt').forEach((btn) => {
-    if (btn.getAttribute('data-color') === selectedColorName) {
+function updateModalColorButtons() {
+  document.querySelectorAll('#modal-color-grid .swatch-btn').forEach((btn) => {
+    if (btn.getAttribute('data-color') === selectedModalColor) {
       btn.classList.add('selected');
     } else {
       btn.classList.remove('selected');
@@ -1285,99 +1690,189 @@ function updateColorButtons() {
   });
 }
 
-function updatePreview() {
-  const inpName = document.getElementById('inp-name');
-  const previewTab = document.getElementById('preview-tab-elem');
-  const previewText = document.getElementById('preview-name-text');
-  const sym = iconSymbols[selectedIcon] || '🦊';
-  previewText.textContent = sym + ' ' + (inpName.value || 'Tab Preview');
-  previewTab.style.borderTopColor = selectedColorHex;
+function updateModalIconButtons() {
+  document.querySelectorAll('#modal-icon-grid .icon-btn').forEach((btn) => {
+    if (btn.getAttribute('data-icon') === selectedModalIcon) {
+      btn.classList.add('selected');
+    } else {
+      btn.classList.remove('selected');
+    }
+  });
 }
 
-// Modal Icon buttons listener
-document.querySelectorAll('.icon-btn').forEach((btn) => {
+function updateModalPreview() {
+  const inpName = document.getElementById('inp-name');
+  const inpEmoji = document.getElementById('inp-emoji');
+  const inpEnableFavicon = document.getElementById('inp-enable-favicon-emoji');
+  const inpEnableTitle = document.getElementById('inp-enable-title-emoji');
+  const inpContainerName = document.getElementById('inp-container-name');
+  const inpMode = document.getElementById('inp-mode');
+
+  const simTab = document.getElementById('sim-tab-elem');
+  const simFavicon = document.getElementById('sim-favicon-elem');
+  const simTitle = document.getElementById('sim-title-elem');
+  const simPill = document.getElementById('sim-pill-elem');
+  const simModeTag = document.getElementById('preview-mode-tag');
+
+  const emoji = (inpEmoji?.value || '').trim();
+  const name = (inpName?.value || '').trim() || 'Tab Vorschau';
+  const container = (inpContainerName?.value || '').trim() || name;
+
+  if (simTab) simTab.style.borderTopColor = selectedModalHex;
+
+  // Favicon dynamic preview
+  if (simFavicon) {
+    if (emoji && inpEnableFavicon?.checked) {
+      simFavicon.textContent = emoji;
+      simFavicon.style.background = selectedModalHex;
+      simFavicon.style.borderRadius = '50%';
+    } else {
+      const sym = iconSymbols[selectedModalIcon] || '🌐';
+      simFavicon.textContent = sym;
+      simFavicon.style.background = 'transparent';
+      simFavicon.style.borderRadius = '4px';
+    }
+  }
+
+  // Title dynamic preview
+  if (simTitle) {
+    if (emoji && inpEnableTitle?.checked) {
+      simTitle.textContent = emoji + ' ' + name;
+    } else {
+      simTitle.textContent = name;
+    }
+  }
+
+  // Pill dynamic preview
+  if (simPill) {
+    simPill.textContent = container;
+    simPill.style.color = selectedModalHex;
+    simPill.style.borderColor = selectedModalHex;
+  }
+
+  if (simModeTag) {
+    simModeTag.textContent = inpMode?.value === 'hybrid' ? 'Hybrid (Container + Theme)' : 'Nur Container';
+  }
+}
+
+// Modal Color & Icon listeners
+document.querySelectorAll('#modal-color-grid .swatch-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    selectedIcon = btn.getAttribute('data-icon') || 'circle';
-    document.getElementById('inp-icon').value = selectedIcon;
-    updateIconButtons();
-    updatePreview();
+    selectedModalColor = btn.getAttribute('data-color');
+    selectedModalHex = btn.getAttribute('data-hex') || hexMap[selectedModalColor] || '#ff4f5e';
+    const inpHex = document.getElementById('inp-hex');
+    if (inpHex) inpHex.value = selectedModalHex;
+    updateModalColorButtons();
+    updateModalPreview();
   });
 });
 
-// Modal Color options click listener
-document.querySelectorAll('.color-opt').forEach((btn) => {
+document.getElementById('inp-hex')?.addEventListener('input', (e) => {
+  selectedModalHex = e.target.value;
+  updateModalPreview();
+});
+
+document.querySelectorAll('#modal-icon-grid .icon-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    selectedColorName = btn.getAttribute('data-color');
-    selectedColorHex = btn.getAttribute('data-hex') || hexMap[selectedColorName] || '#37adff';
-    document.getElementById('inp-hex').value = selectedColorHex;
-    updateColorButtons();
-    updatePreview();
+    selectedModalIcon = btn.getAttribute('data-icon') || 'circle';
+    const inpIcon = document.getElementById('inp-icon');
+    if (inpIcon) inpIcon.value = selectedModalIcon;
+    updateModalIconButtons();
+    updateModalPreview();
   });
 });
 
-document.getElementById('inp-hex').addEventListener('input', (e) => {
-  selectedColorHex = e.target.value;
-  updatePreview();
+// Quick symbol chips in modal
+document.querySelectorAll('.opt-sym-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const sym = btn.getAttribute('data-sym');
+    const inp = document.getElementById('inp-emoji');
+    if (inp) {
+      inp.value = (inp.value === sym) ? '' : sym;
+      updateModalPreview();
+    }
+  });
 });
 
-document.getElementById('inp-name').addEventListener('input', updatePreview);
+document.getElementById('btn-clear-emoji')?.addEventListener('click', () => {
+  const inp = document.getElementById('inp-emoji');
+  if (inp) {
+    inp.value = '';
+    updateModalPreview();
+  }
+});
 
-document.getElementById('inp-type').addEventListener('change', (e) => {
+document.getElementById('inp-emoji')?.addEventListener('input', updateModalPreview);
+document.getElementById('inp-name')?.addEventListener('input', updateModalPreview);
+document.getElementById('inp-container-name')?.addEventListener('input', updateModalPreview);
+document.getElementById('inp-enable-favicon-emoji')?.addEventListener('change', updateModalPreview);
+document.getElementById('inp-enable-title-emoji')?.addEventListener('change', updateModalPreview);
+document.getElementById('inp-mode')?.addEventListener('change', updateModalPreview);
+
+document.getElementById('inp-type')?.addEventListener('change', (e) => {
   const hint = document.getElementById('pattern-hint');
   const val = e.target.value;
-  if (val === 'domain') hint.textContent = 'Matches exact domain and all subdomains (e.g. whomsann.de matches 248924.4.whomsann.de).';
-  else if (val === 'exact_host') hint.textContent = 'Matches ONLY this exact host/subdomain (e.g. 248924.4.whomsann.de). Subdomains are isolated!';
-  else if (val === 'wildcard') hint.textContent = 'Supports * for multiple characters and ? for single character (e.g. *.staging.com/*).';
-  else if (val === 'prefix') hint.textContent = 'Matches any URL beginning with this exact text prefix.';
-  else if (val === 'regex') hint.textContent = 'JavaScript regular expression (case-insensitive).';
-  else if (val === 'exact') hint.textContent = 'Full exact URL match.';
+  if (val === 'domain') hint.textContent = 'Gleicht exakte Domain & alle Subdomains ab (z. B. example.com matcht sub.example.com).';
+  else if (val === 'exact_host') hint.textContent = 'Gleicht NUR diesen exakten Host ab (Subdomains bleiben separat isoliert!).';
+  else if (val === 'wildcard') hint.textContent = 'Unterstützt * für beliebig viele Zeichen und ? für ein Zeichen (z. B. *.staging.com/*).';
+  else if (val === 'prefix') hint.textContent = 'Gleicht jede URL ab, die mit diesem Präfix beginnt.';
+  else if (val === 'regex') hint.textContent = 'JavaScript Regulärer Ausdruck (case-insensitive).';
+  else if (val === 'exact') hint.textContent = 'Volle URL-Gleichheit.';
 });
 
-// Modal save
-document.getElementById('modal-save').addEventListener('click', async () => {
+document.getElementById('modal-close')?.addEventListener('click', closeRuleModal);
+document.getElementById('modal-cancel')?.addEventListener('click', closeRuleModal);
+document.getElementById('btn-add-rule')?.addEventListener('click', () => openRuleModal(-1));
+
+// Save Rule
+document.getElementById('modal-save')?.addEventListener('click', async () => {
   const inpName = document.getElementById('inp-name').value.trim();
   const inpPattern = document.getElementById('inp-pattern').value.trim();
   const inpType = document.getElementById('inp-type').value;
-  const inpHex = document.getElementById('inp-hex').value.trim() || selectedColorHex;
+  const inpHex = document.getElementById('inp-hex').value.trim() || selectedModalHex;
   const inpContainerName = document.getElementById('inp-container-name').value.trim() || inpName || inpPattern;
   const inpEmoji = (document.getElementById('inp-emoji')?.value || '').trim();
+  const inpEnableFavicon = document.getElementById('inp-enable-favicon-emoji')?.checked !== false;
+  const inpEnableTitle = document.getElementById('inp-enable-title-emoji')?.checked !== false;
   const inpIcon = document.getElementById('inp-icon').value;
   const inpMode = document.getElementById('inp-mode').value;
   const inpTopBar = document.getElementById('inp-topbar').checked;
   const inpEnabled = document.getElementById('inp-enabled').checked;
 
   if (!inpPattern) {
-    alert('Please enter a URL pattern.');
+    alert('Bitte geben Sie ein URL-Pattern ein.');
     return;
   }
 
   const finalName = inpName || inpPattern;
 
   if (editingRuleIndex >= 0) {
-    // Edit existing rule
     const rule = appConfig.rules[editingRuleIndex];
     rule.name = finalName;
     rule.patternType = inpType;
     rule.pattern = inpPattern;
     rule.color = inpHex;
-    rule.firefoxContainerColor = selectedColorName;
+    rule.firefoxContainerColor = selectedModalColor;
     rule.containerName = inpContainerName;
     rule.customEmoji = inpEmoji;
+    rule.enableFaviconEmoji = inpEnableFavicon;
+    rule.enableTitleEmoji = inpEnableTitle;
     rule.firefoxContainerIcon = inpIcon;
     rule.colorMode = inpMode;
     rule.accentBorder = inpTopBar;
     rule.enabled = inpEnabled;
   } else {
-    // Create new rule
     const newRule = {
       id: 'rule-' + Date.now(),
       name: finalName,
       patternType: inpType,
       pattern: inpPattern,
       color: inpHex,
-      firefoxContainerColor: selectedColorName,
+      firefoxContainerColor: selectedModalColor,
       containerName: inpContainerName,
       customEmoji: inpEmoji,
+      enableFaviconEmoji: inpEnableFavicon,
+      enableTitleEmoji: inpEnableTitle,
       firefoxContainerIcon: inpIcon,
       colorMode: inpMode,
       accentBorder: inpTopBar,
@@ -1388,155 +1883,285 @@ document.getElementById('modal-save').addEventListener('click', async () => {
   }
 
   await saveConfigToStorage();
-  closeModal();
+  closeRuleModal();
   renderRules();
 });
 
-// Quick symbol buttons
-document.querySelectorAll('.opt-sym-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const sym = btn.getAttribute('data-sym');
-    const inp = document.getElementById('inp-emoji');
-    if (inp) {
-      inp.value = (inp.value === sym) ? '' : sym;
-      updatePreview();
-    }
-  });
-});
+// -------------------------------------------------------------
+// Import Rules Modal (Distinct & Conflict Management)
+// -------------------------------------------------------------
+let pendingImportAnalysis = null;
 
-const btnClearEmoji = document.getElementById('btn-clear-emoji');
-if (btnClearEmoji) {
-  btnClearEmoji.addEventListener('click', () => {
-    const inp = document.getElementById('inp-emoji');
-    if (inp) {
-      inp.value = '';
-      updatePreview();
-    }
-  });
+function getRuleKey(pType, pattern) {
+  return (pType || 'domain').toLowerCase().trim() + '::' + (pattern || '').toLowerCase().trim();
 }
 
-document.getElementById('inp-emoji')?.addEventListener('input', updatePreview);
+function parseRulesFromJson(jsonStr) {
+  if (!jsonStr.trim()) return { rules: [], error: 'Inhalt ist leer.' };
+  try {
+    const parsed = JSON.parse(jsonStr);
+    let raw = [];
+    if (Array.isArray(parsed)) {
+      raw = parsed;
+    } else if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.rules)) raw = parsed.rules;
+      else if (parsed.tabChromaConfig && Array.isArray(parsed.tabChromaConfig.rules)) raw = parsed.tabChromaConfig.rules;
+      else if (parsed.config && Array.isArray(parsed.config.rules)) raw = parsed.config.rules;
+      else if (Array.isArray(parsed.data)) raw = parsed.data;
+      else if (parsed.pattern || parsed.url || parsed.host || parsed.name) raw = [parsed];
+      else return { rules: [], error: 'Keine Regelliste im JSON gefunden.' };
+    }
+    if (raw.length === 0) return { rules: [], error: 'Datei enthält 0 Regeln.' };
+    return { rules: raw };
+  } catch (err) {
+    return { rules: [], error: 'Ungültige JSON-Syntax: ' + err.message };
+  }
+}
 
-document.getElementById('modal-close').addEventListener('click', closeModal);
-document.getElementById('modal-cancel').addEventListener('click', closeModal);
+function analyzeImportRules(rawRules) {
+  const distinctImportedMap = new Map();
+  rawRules.forEach((r, idx) => {
+    const pat = String(r.pattern || r.url || r.host || '').trim();
+    const pType = (r.patternType || 'domain').toLowerCase().trim();
+    const key = pType + '::' + pat.toLowerCase();
+    if (!distinctImportedMap.has(key)) {
+      distinctImportedMap.set(key, { ...r, pattern: pat, patternType: pType, _key: key });
+    }
+  });
 
-document.getElementById('btn-add-rule').addEventListener('click', () => {
-  openModal(-1);
+  const distinctRulesList = Array.from(distinctImportedMap.values());
+  const existingKeyMap = new Map();
+  (appConfig.rules || []).forEach((ex) => {
+    existingKeyMap.set(getRuleKey(ex.patternType, ex.pattern), ex);
+  });
+
+  const newRules = [];
+  const conflictRules = [];
+
+  distinctRulesList.forEach((imp) => {
+    if (existingKeyMap.has(imp._key)) {
+      conflictRules.push({ imported: imp, existing: existingKeyMap.get(imp._key) });
+    } else {
+      newRules.push(imp);
+    }
+  });
+
+  return {
+    totalInFile: rawRules.length,
+    distinctCount: distinctRulesList.length,
+    distinctRulesList,
+    newRules,
+    conflictRules,
+    hasConflicts: conflictRules.length > 0,
+  };
+}
+
+function handleImportContentChanged(content) {
+  const errEl = document.getElementById('import-error');
+  const analysisEl = document.getElementById('import-analysis');
+  const executeBtn = document.getElementById('import-execute');
+
+  if (!content.trim()) {
+    if (errEl) errEl.style.display = 'none';
+    if (analysisEl) analysisEl.style.display = 'none';
+    if (executeBtn) executeBtn.disabled = true;
+    pendingImportAnalysis = null;
+    return;
+  }
+
+  const res = parseRulesFromJson(content);
+  if (res.error) {
+    if (errEl) {
+      errEl.textContent = res.error;
+      errEl.style.display = 'block';
+    }
+    if (analysisEl) analysisEl.style.display = 'none';
+    if (executeBtn) executeBtn.disabled = true;
+    pendingImportAnalysis = null;
+    return;
+  }
+
+  if (errEl) errEl.style.display = 'none';
+  const analysis = analyzeImportRules(res.rules);
+  pendingImportAnalysis = analysis;
+
+  if (analysisEl) analysisEl.style.display = 'block';
+  const statsTitle = document.getElementById('import-stats-title');
+  const statsDesc = document.getElementById('import-stats-desc');
+  const defaultsHint = document.getElementById('import-defaults-hint');
+
+  if (statsTitle) statsTitle.textContent = '✓ ' + analysis.distinctCount + ' distinct Regeln erkannt';
+  if (statsDesc) {
+    statsDesc.textContent = analysis.newRules.length + ' neu hinzuzufügen, ' + analysis.conflictRules.length + ' Konflikte mit bestehenden Regeln.';
+  }
+  if (defaultsHint) {
+    defaultsHint.textContent = 'Verwendet Standard-Farbe (' + appConfig.defaultColor + ') und Container (' + appConfig.defaultContainerColor + ').';
+  }
+
+  // Conflict items container
+  const conflictListContainer = document.getElementById('conflict-list-container');
+  const conflictItems = document.getElementById('conflict-items');
+  if (analysis.hasConflicts) {
+    if (conflictListContainer) conflictListContainer.style.display = 'block';
+    if (conflictItems) {
+      conflictItems.innerHTML = '';
+      analysis.conflictRules.forEach((c) => {
+        const item = document.createElement('div');
+        item.className = 'conflict-item';
+        item.innerHTML = '<span><code>' + c.imported.patternType + '</code> ' + c.imported.pattern + '</span><span style="color:#f59e0b;">Bestehend: ' + (c.existing.name || 'Regel') + '</span>';
+        conflictItems.appendChild(item);
+      });
+    }
+  } else {
+    if (conflictListContainer) conflictListContainer.style.display = 'none';
+  }
+
+  if (executeBtn) {
+    executeBtn.disabled = false;
+    executeBtn.textContent = analysis.hasConflicts
+      ? analysis.newRules.length + ' neu + ' + analysis.conflictRules.length + ' aktualisieren'
+      : analysis.distinctCount + ' Regeln importieren';
+  }
+}
+
+// Wire Import Modal Buttons
+document.getElementById('btn-import-modal-open')?.addEventListener('click', () => {
+  document.getElementById('import-modal-overlay')?.classList.add('active');
+  const err = document.getElementById('import-error');
+  if (err) err.style.display = 'none';
+  const ana = document.getElementById('import-analysis');
+  if (ana) ana.style.display = 'none';
+  const exec = document.getElementById('import-execute');
+  if (exec) exec.disabled = true;
+  const txt = document.getElementById('import-textarea');
+  if (txt) txt.value = '';
+  const fname = document.getElementById('import-file-name');
+  if (fname) fname.textContent = '';
+  pendingImportAnalysis = null;
 });
 
-document.getElementById('btn-export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(appConfig, null, 2)], { type: 'application/json' });
+document.getElementById('import-modal-close')?.addEventListener('click', () => {
+  document.getElementById('import-modal-overlay')?.classList.remove('active');
+});
+
+document.getElementById('import-cancel')?.addEventListener('click', () => {
+  document.getElementById('import-modal-overlay')?.classList.remove('active');
+});
+
+// Import Dual Tabs
+document.getElementById('tab-btn-file')?.addEventListener('click', () => {
+  document.getElementById('tab-btn-file')?.classList.add('active');
+  document.getElementById('tab-btn-text')?.classList.remove('active');
+  const f = document.getElementById('tab-content-file');
+  if (f) f.style.display = 'block';
+  const t = document.getElementById('tab-content-text');
+  if (t) t.style.display = 'none';
+});
+
+document.getElementById('tab-btn-text')?.addEventListener('click', () => {
+  document.getElementById('tab-btn-text')?.classList.add('active');
+  document.getElementById('tab-btn-file')?.classList.remove('active');
+  const t = document.getElementById('tab-content-text');
+  if (t) t.style.display = 'block';
+  const f = document.getElementById('tab-content-file');
+  if (f) f.style.display = 'none';
+});
+
+// File upload in modal
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('import-file-input');
+
+dropZone?.addEventListener('click', () => fileInput?.click());
+fileInput?.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fname = document.getElementById('import-file-name');
+  if (fname) fname.textContent = 'Ausgewählt: ' + file.name;
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    handleImportContentChanged(event.target.result || '');
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById('import-textarea')?.addEventListener('input', (e) => {
+  handleImportContentChanged(e.target.value);
+});
+
+// Execute Import with conflict resolution
+document.getElementById('import-execute')?.addEventListener('click', async () => {
+  if (!pendingImportAnalysis || pendingImportAnalysis.distinctRulesList.length === 0) return;
+
+  const strategy = document.querySelector('input[name="conflict-mode"]:checked')?.value || 'update_conflicts';
+  const forceDefaults = document.getElementById('import-force-defaults')?.checked;
+
+  const defColor = appConfig.defaultColor || '#37adff';
+  const defContainer = appConfig.defaultContainerColor || 'blue';
+  const defMode = appConfig.defaultMode || 'container';
+
+  const processed = pendingImportAnalysis.distinctRulesList.map((r, idx) => {
+    const pat = String(r.pattern || '').trim();
+    const nm = String(r.name || pat || ('Regel ' + (idx + 1))).trim();
+    return {
+      id: r.id ? String(r.id) : ('rule-' + Date.now() + '-' + idx),
+      name: nm,
+      patternType: r.patternType || 'domain',
+      pattern: pat,
+      color: forceDefaults ? defColor : (r.color || defColor),
+      firefoxContainerColor: forceDefaults ? defContainer : (r.firefoxContainerColor || defContainer),
+      firefoxContainerIcon: r.firefoxContainerIcon || 'circle',
+      customEmoji: r.customEmoji || '',
+      enableTitleEmoji: r.enableTitleEmoji !== false,
+      enableFaviconEmoji: r.enableFaviconEmoji !== false,
+      containerName: String(r.containerName || nm || 'Container').trim(),
+      colorMode: forceDefaults ? defMode : (r.colorMode || defMode),
+      accentBorder: r.accentBorder !== false,
+      enabled: r.enabled !== false,
+      priority: idx + 1,
+    };
+  });
+
+  let finalRules = [];
+  if (strategy === 'replace_all') {
+    finalRules = processed.map((r, i) => ({ ...r, priority: i + 1 }));
+  } else {
+    const resultList = [...(appConfig.rules || [])];
+    processed.forEach((imp) => {
+      const key = getRuleKey(imp.patternType, imp.pattern);
+      const exIdx = resultList.findIndex((r) => getRuleKey(r.patternType, r.pattern) === key);
+      if (exIdx >= 0) {
+        if (strategy === 'update_conflicts') {
+          resultList[exIdx] = {
+            ...imp,
+            id: resultList[exIdx].id,
+            priority: resultList[exIdx].priority,
+          };
+        }
+      } else {
+        resultList.push(imp);
+      }
+    });
+    finalRules = resultList.map((r, i) => ({ ...r, priority: i + 1 }));
+  }
+
+  appConfig.rules = finalRules;
+  await saveConfigToStorage();
+  document.getElementById('import-modal-overlay')?.classList.remove('active');
+  renderRules();
+  alert('✓ ' + processed.length + ' Regeln erfolgreich verarbeitet (Gesamtbestand: ' + finalRules.length + ' Regeln)!');
+});
+
+// -------------------------------------------------------------
+// Export JSON
+// -------------------------------------------------------------
+document.getElementById('btn-export')?.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(appConfig.rules || [], null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'tabchroma-rules.json';
   a.click();
-});
-
-document.getElementById('btn-import').addEventListener('click', () => {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        let rawRules = [];
-        if (Array.isArray(parsed)) {
-          rawRules = parsed;
-        } else if (parsed && typeof parsed === 'object') {
-          if (Array.isArray(parsed.rules)) {
-            rawRules = parsed.rules;
-            if (parsed.defaultColor) appConfig.defaultColor = parsed.defaultColor;
-            if (parsed.defaultContainerColor) appConfig.defaultContainerColor = parsed.defaultContainerColor;
-            if (parsed.defaultMode) appConfig.defaultMode = parsed.defaultMode;
-          } else if (parsed.tabChromaConfig && Array.isArray(parsed.tabChromaConfig.rules)) {
-            rawRules = parsed.tabChromaConfig.rules;
-          } else if (parsed.config && Array.isArray(parsed.config.rules)) {
-            rawRules = parsed.config.rules;
-          } else if (Array.isArray(parsed.data)) {
-            rawRules = parsed.data;
-          } else if (parsed.pattern || parsed.url || parsed.host || parsed.name) {
-            rawRules = [parsed];
-          } else {
-            alert('Die JSON-Datei enthält keine gültigen Regeln.');
-            return;
-          }
-        } else {
-          alert('Ungültiges JSON-Format.');
-          return;
-        }
-
-        const defColor = appConfig.defaultColor || '#37adff';
-        const defContainer = appConfig.defaultContainerColor || 'blue';
-        const defMode = appConfig.defaultMode || 'container';
-
-        // Deduplicate imported rules by distinct (patternType, pattern)
-        const distinctImported = new Map();
-        rawRules.forEach((r, i) => {
-          const pat = String(r.pattern || r.url || r.host || '').trim();
-          const pType = (r.patternType || 'domain').toLowerCase().trim();
-          const key = pType + '::' + pat.toLowerCase();
-          if (!distinctImported.has(key)) {
-            distinctImported.set(key, { ...r, pattern: pat, patternType: pType });
-          }
-        });
-
-        // Merge with existing rules based on distinct (patternType, pattern)
-        const currentList = Array.isArray(appConfig.rules) ? [...appConfig.rules] : [];
-        let updatedCount = 0;
-        let newCount = 0;
-
-        distinctImported.forEach((imp, key) => {
-          const existingIdx = currentList.findIndex((ex) => {
-            const exKey = (ex.patternType || 'domain').toLowerCase().trim() + '::' + (ex.pattern || '').toLowerCase().trim();
-            return exKey === key;
-          });
-
-          const nm = String(imp.name || imp.title || imp.pattern || ('Rule ' + (currentList.length + 1))).trim();
-          const formatted = {
-            id: imp.id || 'rule-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
-            name: nm,
-            patternType: imp.patternType || 'domain',
-            pattern: imp.pattern,
-            color: imp.color || defColor,
-            firefoxContainerColor: imp.firefoxContainerColor || defContainer,
-            firefoxContainerIcon: imp.firefoxContainerIcon || 'circle',
-            customEmoji: imp.customEmoji || '',
-            enableTitleEmoji: imp.enableTitleEmoji !== false,
-            enableFaviconEmoji: imp.enableFaviconEmoji !== false,
-            containerName: imp.containerName || nm || 'Container',
-            colorMode: imp.colorMode || defMode,
-            accentBorder: imp.accentBorder !== false,
-            enabled: imp.enabled !== false,
-            priority: 0,
-          };
-
-          if (existingIdx >= 0) {
-            formatted.id = currentList[existingIdx].id;
-            currentList[existingIdx] = formatted;
-            updatedCount++;
-          } else {
-            currentList.push(formatted);
-            newCount++;
-          }
-        });
-
-        appConfig.rules = currentList.map((r, i) => ({ ...r, priority: i + 1 }));
-
-        await saveConfigToStorage();
-        renderRules();
-        alert('Import abgeschlossen: ' + newCount + ' neu hinzugefügt, ' + updatedCount + ' bestehende Regeln aktualisiert!');
-      } catch (err) {
-        alert('Invalid JSON file.');
-      }
-    };
-    reader.readAsText(file);
-  };
-  input.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 });
 
 document.addEventListener('DOMContentLoaded', loadConfig);
