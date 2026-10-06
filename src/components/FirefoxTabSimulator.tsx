@@ -8,9 +8,19 @@ import {
   Plus, 
   X, 
   Puzzle, 
-  ExternalLink,
-  ShieldCheck,
-  Sparkles
+  ShieldCheck, 
+  Sparkles,
+  RotateCcw,
+  Layers,
+  Globe,
+  Server,
+  CheckCircle2,
+  Terminal,
+  Activity,
+  Upload,
+  Database,
+  Trash2,
+  Edit3
 } from 'lucide-react';
 import { TabColorRule, TabSimulatorItem } from '../types/extension';
 import { matchUrlAgainstRules } from '../utils/urlMatcher';
@@ -18,51 +28,150 @@ import { matchUrlAgainstRules } from '../utils/urlMatcher';
 interface FirefoxTabSimulatorProps {
   rules: TabColorRule[];
   onAddRuleClick?: () => void;
+  onUpdateRule?: (rule: TabColorRule) => void;
+  onEditRule?: (rule: TabColorRule) => void;
 }
 
-const DEFAULT_SIMULATOR_TABS: TabSimulatorItem[] = [
+export interface ExampleScenario {
+  id: string;
+  name: string;
+  description: string;
+  tabs: TabSimulatorItem[];
+}
+
+export const EXAMPLE_TAB_SCENARIOS: ExampleScenario[] = [
   {
-    id: 'tab-1',
-    title: 'console.aws.amazon.com/ecs',
-    url: 'https://console.aws.amazon.com/ecs/home',
-    favicon: '☁️',
-    matchedRuleId: null,
+    id: 'standard',
+    name: 'Standard-Beispiele',
+    description: 'Typische DevOps-, Import- und Entwicklungs-Umgebungen',
+    tabs: [
+      {
+        id: 'tab-1',
+        title: 'prod.example.com/app',
+        url: 'https://prod.example.com/dashboard',
+        favicon: '🚀',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-2',
+        title: 'import.example.com/data',
+        url: 'https://import.example.com/data',
+        favicon: '⬇️',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-3',
+        title: 'staging.example.org/health',
+        url: 'https://api.staging.example.org/health',
+        favicon: '🧪',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-4',
+        title: 'localhost:3000 - Dev Server',
+        url: 'http://localhost:3000/dashboard',
+        favicon: '⚡',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-5',
+        title: '248924.4.whomsann.de/app',
+        url: 'https://248924.4.whomsann.de/app',
+        favicon: '📦',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-6',
+        title: '248923.32.whomsann.de - Isoliert',
+        url: 'https://248923.32.whomsann.de/app',
+        favicon: '🌐',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-7',
+        title: 'Wikipedia - Freier Standard-Tab',
+        url: 'https://de.wikipedia.org/wiki/Firefox',
+        favicon: '📰',
+        matchedRuleId: null,
+      },
+    ],
   },
   {
-    id: 'tab-2',
-    title: 'app.staging.example.com',
-    url: 'https://app.staging.example.com/api/v1/health',
-    favicon: '🧪',
-    matchedRuleId: null,
+    id: 'colors',
+    name: 'Farben & Symbole Demo',
+    description: 'Farbzuordnungen Rot, Blau, Grün, Gelb mit Symbolen',
+    tabs: [
+      {
+        id: 'tab-c1',
+        title: 'red.example.net (Kritisch / Prod)',
+        url: 'https://red.example.net',
+        favicon: '🔴',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-c2',
+        title: 'blue.example.net (Import Service)',
+        url: 'https://blue.example.net',
+        favicon: '⬇️',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-c3',
+        title: 'green.example.net (Lokale Entwicklung)',
+        url: 'https://green.example.net',
+        favicon: '🟢',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-c4',
+        title: 'yellow.example.net (Finanzen & Abrechnung)',
+        url: 'https://yellow.example.net',
+        favicon: '🟡',
+        matchedRuleId: null,
+      },
+    ],
   },
   {
-    id: 'tab-3',
-    title: 'localhost:3000 - Local Dev Server',
-    url: 'http://localhost:3000/dashboard',
-    favicon: '⚡',
-    matchedRuleId: null,
-  },
-  {
-    id: 'tab-4',
-    title: 'github.com/organization/repo',
-    url: 'https://github.com/organization/main-service',
-    favicon: '🐙',
-    matchedRuleId: null,
-  },
-  {
-    id: 'tab-5',
-    title: 'Hacker News - Unmatched URL',
-    url: 'https://news.ycombinator.com',
-    favicon: '📰',
-    matchedRuleId: null,
+    id: 'subdomains',
+    name: 'Subdomain-Isolations-Test',
+    description: 'Vergleich exakter Host vs. andere Subdomains',
+    tabs: [
+      {
+        id: 'tab-s1',
+        title: '248924.4.whomsann.de (Mit spezifischer Regel)',
+        url: 'https://248924.4.whomsann.de/app',
+        favicon: '📦',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-s2',
+        title: '248923.32.whomsann.de (Ohne Regel - isoliert)',
+        url: 'https://248923.32.whomsann.de/app',
+        favicon: '🌐',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-s3',
+        title: 'auth.whomsann.de (Login-Portal)',
+        url: 'https://auth.whomsann.de/login',
+        favicon: '🔒',
+        matchedRuleId: null,
+      },
+    ],
   },
 ];
 
-export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules, onAddRuleClick }) => {
-  const [tabs, setTabs] = useState<TabSimulatorItem[]>(DEFAULT_SIMULATOR_TABS);
+export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ 
+  rules, 
+  onAddRuleClick,
+  onUpdateRule,
+  onEditRule
+}) => {
+  const [tabs, setTabs] = useState<TabSimulatorItem[]>(EXAMPLE_TAB_SCENARIOS[0].tabs);
   const [activeTabId, setActiveTabId] = useState<string>('tab-1');
-  const [inputUrl, setInputUrl] = useState<string>('https://console.aws.amazon.com/ecs/home');
+  const [inputUrl, setInputUrl] = useState<string>(EXAMPLE_TAB_SCENARIOS[0].tabs[0].url);
   const [browserTheme, setBrowserTheme] = useState<'dark' | 'light'>('dark');
+  const [titleSimulationNotice, setTitleSimulationNotice] = useState<string | null>(null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const activeMatch = matchUrlAgainstRules(activeTab?.url || '', rules);
@@ -70,6 +179,7 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
   const handleSelectTab = (tab: TabSimulatorItem) => {
     setActiveTabId(tab.id);
     setInputUrl(tab.url);
+    setTitleSimulationNotice(null);
   };
 
   const handleNavigate = (e: React.FormEvent) => {
@@ -90,20 +200,31 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
       return t;
     });
     setTabs(updated);
+    setTitleSimulationNotice(null);
   };
 
-  const handleAddTab = () => {
+  const handleLoadScenario = (scenarioId: string) => {
+    const sc = EXAMPLE_TAB_SCENARIOS.find((s) => s.id === scenarioId);
+    if (!sc) return;
+    setTabs(sc.tabs);
+    setActiveTabId(sc.tabs[0].id);
+    setInputUrl(sc.tabs[0].url);
+    setTitleSimulationNotice(null);
+  };
+
+  const handleQuickAdd = (url: string, title: string, favicon: string) => {
     const newId = `tab-${Date.now()}`;
     const newTab: TabSimulatorItem = {
       id: newId,
-      title: 'New Tab',
-      url: 'https://api.prod.company.net/v2/orders',
-      favicon: '🌐',
+      title,
+      url,
+      favicon,
       matchedRuleId: null,
     };
     setTabs([...tabs, newTab]);
     setActiveTabId(newId);
-    setInputUrl(newTab.url);
+    setInputUrl(url);
+    setTitleSimulationNotice(null);
   };
 
   const handleCloseTab = (id: string, e: React.MouseEvent) => {
@@ -114,24 +235,415 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
     if (activeTabId === id) {
       setActiveTabId(nextTabs[0].id);
       setInputUrl(nextTabs[0].url);
+      setTitleSimulationNotice(null);
     }
+  };
+
+  // Simulates in-page JavaScript functions altering document.title
+  const handleSimulatePageTitleChange = (newTitle: string) => {
+    if (!activeTab) return;
+    const updated = tabs.map((t) => {
+      if (t.id === activeTabId) {
+        return {
+          ...t,
+          title: newTitle,
+        };
+      }
+      return t;
+    });
+    setTabs(updated);
+    const sym = activeMatch.rule?.customEmoji;
+    if (sym) {
+      setTitleSimulationNotice(`Webseite hat document.title geändert auf: "${newTitle}". Das angehängte Symbol "${sym}" bleibt dank dauerhaftem Schutz fest im Tab-Reiter vorangestellt!`);
+    } else {
+      setTitleSimulationNotice(`Webseite hat document.title geändert auf: "${newTitle}".`);
+    }
+  };
+
+  // Removes the attached symbol from the current rule
+  const handleRemoveSymbol = () => {
+    if (!activeMatch.rule || !onUpdateRule) return;
+    onUpdateRule({
+      ...activeMatch.rule,
+      customEmoji: '',
+    });
+    setTitleSimulationNotice(`Angehängtes Symbol für Regel "${activeMatch.rule.name}" wurde erfolgreich entfernt.`);
+  };
+
+  // Attaches or updates the symbol for the current rule
+  const handleAttachSymbol = (sym: string) => {
+    if (!activeMatch.rule || !onUpdateRule) return;
+    onUpdateRule({
+      ...activeMatch.rule,
+      customEmoji: sym,
+      enableTitleEmoji: true,
+      enableFaviconEmoji: true,
+    });
+    setTitleSimulationNotice(`Symbol "${sym}" wurde der Regel "${activeMatch.rule.name}" angehängt.`);
+  };
+
+  // Helper to render mock website body based on URL
+  const renderSimulatedPageContent = () => {
+    const url = activeTab?.url || '';
+    const isDark = browserTheme === 'dark';
+
+    let specificContent = null;
+
+    if (url.includes('prod.example.com')) {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🚀</span>
+              <div>
+                <h4 className="font-bold text-sm text-rose-400">Production Web App · Live Cluster</h4>
+                <div className="text-[11px] text-slate-400">Environment: PROD-EU-WEST-1 · Node ID: prd-srv-04</div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+              ● High Alert Production
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5 text-xs">
+            <div className="p-2.5 rounded-lg bg-black/20 border border-slate-700/40">
+              <div className="text-slate-400 text-[10px]">System Health</div>
+              <div className="font-bold text-emerald-400 mt-1 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> 99.99% Uptime
+              </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-black/20 border border-slate-700/40">
+              <div className="text-slate-400 text-[10px]">Requests / sec</div>
+              <div className="font-bold text-sky-400 mt-1">14,250 req/s</div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-black/20 border border-slate-700/40">
+              <div className="text-slate-400 text-[10px]">Avg Latency</div>
+              <div className="font-bold text-slate-200 mt-1">18 ms</div>
+            </div>
+          </div>
+        </div>
+      );
+    } else if (url.includes('import.example.com') || url.includes('import') || url.includes('blue.example.net')) {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⬇️</span>
+              <div>
+                <h4 className="font-bold text-sm text-sky-400">Data Import Pipeline & Upload Service</h4>
+                <div className="text-[11px] text-slate-400">Bulk Ingestion Engine · Worker: worker-import-02</div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+              ⬇️ Import Service
+            </span>
+          </div>
+
+          <div className="p-4 rounded-lg border border-dashed border-sky-500/40 bg-sky-500/5 text-center space-y-1">
+            <Upload className="w-6 h-6 mx-auto text-sky-400" />
+            <div className="text-xs font-semibold text-sky-300">CSV- oder JSON-Dateien hier ablegen</div>
+            <div className="text-[10px] text-slate-400">Automatische Validierung & Schema-Zuordnung (Ingestion Queue: 0 wartend)</div>
+          </div>
+        </div>
+      );
+    } else if (url.includes('staging')) {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🧪</span>
+              <div>
+                <h4 className="font-bold text-sm text-amber-400">Staging QA & Integration Test Suite</h4>
+                <div className="text-[11px] text-slate-400">Branch: release/v2.4.0 · Test-Cluster Online</div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              🧪 Staging Sandbox
+            </span>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-black/20 border border-slate-700/40 text-xs font-mono space-y-1">
+            <div className="text-emerald-400">✓ 42 / 42 E2E Tests bestanden</div>
+            <div className="text-slate-400">Testing container isolation and network mock APIs</div>
+          </div>
+        </div>
+      );
+    } else if (url.includes('localhost') || url.includes('3000') || url.includes('green.example.net')) {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⚡</span>
+              <div>
+                <h4 className="font-bold text-sm text-emerald-400">Local Development Server</h4>
+                <div className="text-[11px] text-slate-400">Vite Dev Server · Port 3000 · Hot Reload Active</div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              ⚡ Localhost / Sandbox
+            </span>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-black/30 border border-slate-700/40 text-xs font-mono text-emerald-300 space-y-0.5">
+            <div>$ npm run dev</div>
+            <div className="text-slate-400">&gt; vite ready in 142 ms</div>
+            <div className="text-sky-400">&gt; Local: http://localhost:3000/</div>
+          </div>
+        </div>
+      );
+    } else if (url.includes('red.example.net')) {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🔴</span>
+              <div>
+                <h4 className="font-bold text-sm text-rose-400">Kritischer Produktions-Sicherheitsbereich</h4>
+                <div className="text-[11px] text-slate-400">Host: red.example.net · Vollständig isolierter Container</div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+              🔴 Kritisch / Prod
+            </span>
+          </div>
+
+          <div className="p-3 rounded-lg bg-rose-500/5 border border-rose-500/20 text-xs space-y-1">
+            <div className="font-semibold text-rose-300">Produktions-Datenbank & Sicherheitsrichtlinien aktiv</div>
+            <div className="text-slate-400 text-[11px]">Cookies, Sessions und Browser-Speicher sind streng in diesem roten Container isoliert.</div>
+          </div>
+        </div>
+      );
+    } else if (url.includes('yellow.example.net')) {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🟡</span>
+              <div>
+                <h4 className="font-bold text-sm text-amber-300">Finanzen & Buchhaltungs-Portal</h4>
+                <div className="text-[11px] text-slate-400">Host: yellow.example.net · Rechnungen, Steuern & Zahlungsverkehr</div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              🟡 Finanzen
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2.5 rounded bg-black/20 border border-slate-700/40">
+              <div className="text-slate-400 text-[10px]">Offene Rechnungen</div>
+              <div className="font-bold text-amber-300 text-sm mt-0.5">14 Belege</div>
+            </div>
+            <div className="p-2.5 rounded bg-black/20 border border-slate-700/40">
+              <div className="text-slate-400 text-[10px]">Zahlungsstatus</div>
+              <div className="font-bold text-emerald-400 text-sm mt-0.5">Ausgeglichen</div>
+            </div>
+          </div>
+        </div>
+      );
+    } else if (url.includes('whomsann.de')) {
+      const isExactHost = url.includes('248924.4.whomsann.de');
+      const isAuth = url.includes('auth.whomsann.de');
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">{isAuth ? '🔒' : isExactHost ? '📦' : '🌐'}</span>
+              <div>
+                <h4 className="font-bold text-sm text-sky-300">
+                  {isAuth ? 'SSO Authentifizierungs-Zentrale' : `Instance Console · ${url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '')}`}
+                </h4>
+                <div className="text-[11px] text-slate-400">
+                  {isAuth 
+                    ? 'Zentrale Identitätsverwaltung & 2FA-Authentifizierung' 
+                    : isExactHost 
+                    ? 'Zugeordneter exakter Mandant (Host: 248924.4)' 
+                    : 'Unzugeordnete Subdomain (Isoliert im Standard)'}
+                </div>
+              </div>
+            </div>
+            <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+              isAuth || isExactHost 
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' 
+                : 'bg-slate-700/50 text-slate-300 border border-slate-600'
+            }`}>
+              {isAuth ? '🔒 Auth-Container' : isExactHost ? 'Regel aktiv' : 'Keine Regel (Isoliert)'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {isAuth
+              ? 'Login-Sessions und Auth-Token werden in einem geschützten Authentifizierungs-Container verwaltet.'
+              : isExactHost 
+              ? 'Dieser Host entspricht exakt der Regel für 248924.4.whomsann.de und wird dem konfigurierten Container zugeordnet.'
+              : 'Diese Subdomain unterscheidet sich vom konfigurierten Host und wird dank exakter Host-Prüfung getrennt gehalten.'}
+          </p>
+        </div>
+      );
+    } else {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🌐</span>
+              <div>
+                <h4 className="font-bold text-sm text-slate-300">
+                  {activeTab?.title || 'Web Page'}
+                </h4>
+                <div className="text-[11px] text-slate-400 font-mono truncate max-w-md">{url}</div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-700/50 text-slate-300 border border-slate-600">
+              {activeMatch.matched ? 'Regel aktiv' : 'Standard-Tab'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {activeMatch.matched 
+              ? `Diese URL wurde erfolgreich der Regel "${activeMatch.rule?.name}" und dem Firefox Container "${activeMatch.rule?.containerName}" zugeordnet.`
+              : 'Diese URL entspricht keiner aktiven Farbregel und wird als normaler, ungefilterter Firefox-Tab dargestellt.'}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {specificContent}
+
+        {/* Dynamic Title / In-Page Function Click Simulation */}
+        <div className="pt-4 border-t border-slate-700/40 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <div className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Interaktiver Funktionstest: Dynamische Seitennamen-Änderung (SPA)</span>
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Wenn Sie in Web-Apps (SPAs) auf Funktionen klicken, ändert die Webseite per JavaScript ihren Titel. Das Tab-Symbol bleibt dauerhaft im Tab-Reiter fixiert:
+              </div>
+            </div>
+            {activeMatch.rule?.customEmoji && (
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-400/20 text-amber-300 border border-amber-300/30">
+                Fixiertes Symbol: {activeMatch.rule.customEmoji}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-slate-400 mr-1">Funktion anklicken:</span>
+            <button
+              onClick={() => handleSimulatePageTitleChange('Übersicht & Live-Status')}
+              className="px-2.5 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-500 transition-colors"
+            >
+              📊 Übersicht laden
+            </button>
+            <button
+              onClick={() => handleSimulatePageTitleChange('Echtzeit-Metriken & Logs #84')}
+              className="px-2.5 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-500 transition-colors"
+            >
+              📈 Metriken öffnen
+            </button>
+            <button
+              onClick={() => handleSimulatePageTitleChange('Import-Vorgang läuft (100% fertig)')}
+              className="px-2.5 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-500 transition-colors"
+            >
+              ⚡ Job ausführen
+            </button>
+            <button
+              onClick={() => handleSimulatePageTitleChange('Benutzer-Profil & Einstellungen')}
+              className="px-2.5 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-500 transition-colors"
+            >
+              ⚙️ Einstellungen
+            </button>
+          </div>
+
+          {titleSimulationNotice && (
+            <div className="p-2.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{titleSimulationNotice}</span>
+              </div>
+              <button
+                onClick={() => setTitleSimulationNotice(null)}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Symbol Management Bar (Entfernen & Hinzufügen) */}
+          <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">Tab-Symbol Status:</span>
+              {activeMatch.rule?.customEmoji ? (
+                <span className="font-bold text-amber-300 flex items-center gap-1">
+                  <span>Angehängt:</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-400/25 border border-amber-300/40 text-amber-200">{activeMatch.rule.customEmoji}</span>
+                </span>
+              ) : (
+                <span className="text-slate-500 italic">Kein Symbol angehängt</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {activeMatch.rule?.customEmoji ? (
+                <button
+                  onClick={handleRemoveSymbol}
+                  className="px-2.5 py-1 rounded text-xs font-bold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors flex items-center gap-1 shadow-2xs"
+                  title="Entfernt das angehängte Symbol aus dieser Regel"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>✕ Symbol entfernen</span>
+                </button>
+              ) : activeMatch.matched && activeMatch.rule ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-400 text-[11px] mr-1">Symbol anhängen:</span>
+                  {['🚀', '⬇️', '📦', '⚡', '🧪', '🔒'].map((sym) => (
+                    <button
+                      key={sym}
+                      onClick={() => handleAttachSymbol(sym)}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs transition-colors"
+                    >
+                      {sym}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {activeMatch.rule && onEditRule && (
+                <button
+                  onClick={() => onEditRule(activeMatch.rule!)}
+                  className="px-2.5 py-1 rounded text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors flex items-center gap-1"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Regel bearbeiten</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="space-y-4">
       {/* Control bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
         <div>
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
             <span className="text-orange-500">🦊</span>
             Interactive Firefox Browser Simulator
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time preview of Firefox tabs with container stripes, adaptive active theme tinting, and address bar badges.
+            Echtzeit-Simulation von Firefox-Tabs mit Container-Farblinien, Tab-Symbolen und Adressleisten-Badges.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Theme switcher */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
             <button
               onClick={() => setBrowserTheme('dark')}
@@ -151,12 +663,72 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
             </button>
           </div>
 
+          {/* Regenerate Sample Tabs Button */}
           <button
-            onClick={handleAddTab}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            onClick={() => handleLoadScenario('standard')}
+            title="Generiert einen frischen Satz aussagekräftiger Beispiel-Tabs unabhängig vom Rest"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors shadow-2xs"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Open Tab</span>
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Beispiel-Tabs neu generieren</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Example Scenarios Bar & Quick Add Pills */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-slate-500 font-bold text-[11px] mr-1">Beispiel-Szenarien:</span>
+          {EXAMPLE_TAB_SCENARIOS.map((sc) => (
+            <button
+              key={sc.id}
+              onClick={() => handleLoadScenario(sc.id)}
+              className="px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-medium transition-colors text-xs shadow-2xs"
+              title={sc.description}
+            >
+              {sc.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Quick Add Specific Samples */}
+        <div className="flex items-center gap-1 overflow-x-auto max-w-full pb-0.5">
+          <span className="text-slate-400 text-[11px] shrink-0 mr-1">+ Schnell-Beispiel:</span>
+          <button
+            onClick={() => handleQuickAdd('https://prod.example.com/dashboard', 'prod.example.com', '🚀')}
+            className="px-2 py-0.5 rounded bg-white hover:bg-rose-50 text-rose-700 border border-slate-200 hover:border-rose-200 text-xs font-medium whitespace-nowrap shadow-2xs"
+          >
+            + Prod 🚀
+          </button>
+          <button
+            onClick={() => handleQuickAdd('https://import.example.com/data', 'import.example.com', '⬇️')}
+            className="px-2 py-0.5 rounded bg-white hover:bg-sky-50 text-sky-700 border border-slate-200 hover:border-sky-200 text-xs font-medium whitespace-nowrap shadow-2xs"
+          >
+            + Import ⬇️
+          </button>
+          <button
+            onClick={() => handleQuickAdd('https://api.staging.example.org/health', 'staging.example.org', '🧪')}
+            className="px-2 py-0.5 rounded bg-white hover:bg-amber-50 text-amber-700 border border-slate-200 hover:border-amber-200 text-xs font-medium whitespace-nowrap shadow-2xs"
+          >
+            + Staging 🧪
+          </button>
+          <button
+            onClick={() => handleQuickAdd('http://localhost:3000/dashboard', 'localhost:3000', '⚡')}
+            className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-slate-200 hover:border-emerald-200 text-xs font-medium whitespace-nowrap shadow-2xs"
+          >
+            + Dev ⚡
+          </button>
+          <button
+            onClick={() => handleQuickAdd('https://248924.4.whomsann.de/app', '248924.4.whomsann.de', '📦')}
+            className="px-2 py-0.5 rounded bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-200 text-xs font-mono whitespace-nowrap shadow-2xs"
+          >
+            + 248924.4
+          </button>
+          <button
+            onClick={() => handleQuickAdd('https://de.wikipedia.org/wiki/Firefox', 'Wikipedia', '📰')}
+            className="px-2 py-0.5 rounded bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium whitespace-nowrap shadow-2xs"
+          >
+            + Unmatched
           </button>
         </div>
       </div>
@@ -217,21 +789,27 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
 
                   {/* Title & Container Subtitle */}
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="truncate text-xs font-medium leading-tight">
-                      {match.matched && match.rule?.customEmoji && match.rule.enableTitleEmoji !== false
-                        ? `${match.rule.customEmoji} `
-                        : ''}
-                      {tab.title}
+                    <span className="truncate text-xs font-medium leading-tight flex items-center gap-1.5">
+                      {match.matched && match.rule?.customEmoji && match.rule.enableTitleEmoji !== false && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-400/25 text-amber-300 font-bold text-[11px] border border-amber-300/40 shrink-0 shadow-2xs"
+                          title={`Angehängtes Tab-Symbol: ${match.rule.customEmoji} (bleibt bei JavaScript-Funktionsklicks dauerhaft vorangestellt)`}
+                        >
+                          <span>{match.rule.customEmoji}</span>
+                          <span className="text-[9px] uppercase tracking-wide opacity-80 hidden sm:inline">Angehängt</span>
+                        </span>
+                      )}
+                      <span className="truncate font-semibold">{tab.title}</span>
                     </span>
                     {containerName && (
                       <span
-                        className="text-[10px] truncate font-normal opacity-80 leading-none mt-0.5"
+                        className="text-[10px] truncate font-normal opacity-90 leading-none mt-0.5 flex items-center gap-1"
                         style={{ color: tabColor || '#38bdf8' }}
                       >
-                        {match.matched && match.rule?.customEmoji && !containerName.startsWith(match.rule.customEmoji)
-                          ? `${match.rule.customEmoji} `
-                          : ''}
-                        {containerName}
+                        {match.matched && match.rule?.customEmoji && (
+                          <span className="font-bold">{match.rule.customEmoji}</span>
+                        )}
+                        <span>{containerName}</span>
                       </span>
                     )}
                   </div>
@@ -240,7 +818,7 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
                   <button
                     onClick={(e) => handleCloseTab(tab.id, e)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-slate-500/20 text-slate-400 hover:text-slate-200 transition-opacity shrink-0"
-                    title="Close tab"
+                    title="Tab schließen"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -258,13 +836,13 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
 
             {/* New Tab Button */}
             <button
-              onClick={handleAddTab}
+              onClick={() => handleQuickAdd('https://generic.example.net', 'New Example Tab', '🌐')}
               className={`p-1.5 mb-1 rounded-md text-xs transition-colors shrink-0 ${
                 browserTheme === 'dark'
                   ? 'text-slate-400 hover:text-white hover:bg-slate-800'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
               }`}
-              title="Open a new tab"
+              title="Neuen Beispiel-Tab öffnen"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -330,6 +908,9 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ backgroundColor: activeMatch.rule.color }}
                   />
+                  {activeMatch.rule.customEmoji && (
+                    <span className="font-bold text-xs">{activeMatch.rule.customEmoji}</span>
+                  )}
                   <span className="truncate max-w-[130px] font-semibold">
                     {activeMatch.rule.containerName}
                   </span>
@@ -356,7 +937,7 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
 
         {/* Tab Viewport / Simulated Page Canvas */}
         <div
-          className={`p-6 min-h-[300px] relative transition-colors ${
+          className={`p-6 min-h-[340px] relative transition-colors ${
             browserTheme === 'dark' ? 'bg-[#181825]' : 'bg-[#f8fafc]'
           }`}
         >
@@ -368,9 +949,10 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
             />
           )}
 
-          {/* Active Container Status Banner */}
-          {activeMatch.matched && activeMatch.rule ? (
-            <div className="max-w-2xl mx-auto space-y-4">
+          {/* Main Simulated Page Container */}
+          <div className="max-w-2xl mx-auto space-y-4">
+            {/* Active Container Status Banner */}
+            {activeMatch.matched && activeMatch.rule ? (
               <div
                 className="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 style={{
@@ -383,12 +965,12 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
                     className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shrink-0 shadow-sm"
                     style={{ backgroundColor: activeMatch.rule.color }}
                   >
-                    🦊
+                    {activeMatch.rule.customEmoji || '🦊'}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Active Rule Matched
+                        Zugeordnete Farbregel
                       </span>
                       <span className="text-slate-400">·</span>
                       <span
@@ -399,11 +981,18 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
                       </span>
                     </div>
                     <div
-                      className={`text-sm font-semibold mt-0.5 ${
+                      className={`text-sm font-semibold mt-0.5 flex items-center gap-1.5 ${
                         browserTheme === 'dark' ? 'text-white' : 'text-slate-900'
                       }`}
                     >
-                      Container: {activeMatch.rule.containerName} ({activeMatch.rule.firefoxContainerColor})
+                      <span>Container:</span>
+                      {activeMatch.rule.customEmoji && (
+                        <span className="font-bold text-amber-500">{activeMatch.rule.customEmoji}</span>
+                      )}
+                      <span>{activeMatch.rule.containerName}</span>
+                      <span className="text-xs font-normal text-slate-400">
+                        ({activeMatch.rule.firefoxContainerColor})
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -416,77 +1005,80 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({ rules,
                     {activeMatch.rule.color}
                   </span>
                   <span className="text-[11px] text-slate-400">
-                    Mode: {activeMatch.rule.colorMode}
+                    Modus: {activeMatch.rule.colorMode}
                   </span>
                 </div>
               </div>
+            ) : (
+              <div className="p-3 rounded-xl border border-slate-700/50 bg-black/20 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Globe className="w-4 h-4 text-slate-400" />
+                  <span>Keine Regel zugeordnet · Läuft im Standard-Firefox-Container</span>
+                </div>
+                {onAddRuleClick && (
+                  <button
+                    onClick={onAddRuleClick}
+                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-white bg-sky-600 hover:bg-sky-500 transition-colors"
+                  >
+                    + Regel für diese URL definieren
+                  </button>
+                )}
+              </div>
+            )}
 
-              {/* Technical Pipeline Explanation */}
+            {/* Simulated Live Web Content (Realistic Webpage Mock) */}
+            <div
+              className={`p-5 rounded-xl border ${
+                browserTheme === 'dark'
+                  ? 'bg-[#11111b] border-slate-800 text-slate-200'
+                  : 'bg-white border-slate-200 text-slate-800'
+              }`}
+            >
+              {renderSimulatedPageContent()}
+            </div>
+
+            {/* Technical Pipeline Explanation */}
+            {activeMatch.matched && activeMatch.rule && (
               <div
-                className={`p-4 rounded-xl border text-xs space-y-2 ${
+                className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
                   browserTheme === 'dark'
-                    ? 'bg-[#11111b] border-slate-800 text-slate-300'
+                    ? 'bg-[#11111b]/80 border-slate-800/80 text-slate-300'
                     : 'bg-white border-slate-200 text-slate-700'
                 }`}
               >
                 <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-sky-500" />
-                  How Firefox Applies This Tab Color:
+                  <span>Firefox-Container Verhalten für diesen Tab:</span>
                 </div>
-                <ul className="list-disc list-inside space-y-1 text-slate-500 dark:text-slate-400">
+                <ul className="list-disc list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
                   <li>
-                    <strong>WebNavigation Intercept:</strong> Intercepted navigation to{' '}
-                    <code className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[11px]">
-                      {activeTab.url}
-                    </code>
-                  </li>
-                  <li>
-                    <strong>Pattern Evaluation:</strong> Matched{' '}
-                    <code className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[11px]">
+                    <strong>Muster-Treffer:</strong> Regel-Typ{' '}
+                    <code className="px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[11px]">
                       {activeMatch.rule.patternType}: {activeMatch.rule.pattern}
                     </code>
                   </li>
                   <li>
-                    <strong>Firefox Contextual Identity:</strong> Opened in container{' '}
-                    <span className="font-semibold text-sky-500">
+                    <strong>Container-Identität:</strong> Geöffnet in{' '}
+                    <span className="font-semibold text-sky-400">
                       "{activeMatch.rule.containerName}"
                     </span>{' '}
-                    with color{' '}
-                    <span className="font-mono text-xs">{activeMatch.rule.firefoxContainerColor}</span>.
+                    ({activeMatch.rule.firefoxContainerColor}).
                   </li>
+                  {activeMatch.rule.customEmoji && (
+                    <li>
+                      <strong>Angehängtes Symbol:</strong> {activeMatch.rule.customEmoji} ist im Tab-Titel und im Container-Badge sichtbar.
+                    </li>
+                  )}
                   <li>
-                    <strong>Dynamic Theme API:</strong> Updated Firefox window theme accent line to{' '}
-                    <span className="font-mono text-xs">{activeMatch.rule.color}</span>.
+                    <strong>Browser-Farbschema:</strong>{' '}
+                    {activeMatch.rule.colorMode === 'container' 
+                      ? 'Geschützt (Firefox-Browserfarbschema bleibt unberührt)' 
+                      : 'Hybrid (Tab-Stripe & Toolbar-Akzent)'}
                   </li>
                 </ul>
               </div>
-            </div>
-          ) : (
-            <div className="max-w-lg mx-auto text-center py-10 space-y-3">
-              <div className="w-12 h-12 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto text-xl">
-                🌐
-              </div>
-              <h3 className={`text-sm font-semibold ${browserTheme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-                Standard Tab (No Color Rule)
-              </h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                The current URL{' '}
-                <code className="font-mono text-[11px] bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">
-                  {activeTab?.url}
-                </code>{' '}
-                did not match any configured rule. It renders with standard Firefox gray chrome.
-              </p>
-              {onAddRuleClick && (
-                <button
-                  onClick={onAddRuleClick}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-lg shadow-xs transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Define Rule for This URL</span>
-                </button>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

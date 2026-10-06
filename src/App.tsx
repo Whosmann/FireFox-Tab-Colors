@@ -10,11 +10,12 @@ import { UrlTesterBar } from './components/UrlTesterBar';
 import { RuleManager } from './components/RuleManager';
 import { RuleEditorModal } from './components/RuleEditorModal';
 import { VersionBumpModal } from './components/VersionBumpModal';
+import { DefaultSettingsCard } from './components/DefaultSettingsCard';
 import { SourceCodeViewer } from './components/SourceCodeViewer';
 import { InstallGuideView } from './components/InstallGuideView';
 import { PublishGuideView } from './components/PublishGuideView';
 import { ExtensionConfig, TabColorRule } from './types/extension';
-import { PRESET_PACKS } from './utils/presetRules';
+import { PRESET_PACKS, DUMMY_RULES } from './utils/presetRules';
 import { downloadExtensionZip, downloadExtensionXpi } from './utils/extensionGenerator';
 
 const INITIAL_RULES: TabColorRule[] = [
@@ -27,11 +28,11 @@ const INITIAL_CONFIG: ExtensionConfig = {
   extensionDescription: 'Automatically colors Firefox tabs based on custom URL patterns, regex rules, and Firefox Containers.',
   defaultColor: '#37adff',
   defaultContainerColor: 'blue',
-  defaultMode: 'hybrid',
+  defaultMode: 'container', // 'container' leaves Firefox's native browser window Farbschema untouched!
   rules: INITIAL_RULES,
   enablePageTopBar: true,
   enableFaviconBadge: true,
-  enableActiveTabTheme: true,
+  enableActiveTabTheme: false, // Default false: new containers do NOT alter Firefox's browser window Farbschema!
   revertUnmatchedToDefault: true,
 };
 
@@ -44,6 +45,26 @@ export default function App() {
         if (!parsed.extensionVersion || parsed.extensionVersion === '1.0.0') {
           parsed.extensionVersion = '1.0.1';
         }
+
+        // Strictly sanitize any rule referencing azure or proprietary cloud
+        if (parsed.rules && Array.isArray(parsed.rules)) {
+          parsed.rules = parsed.rules.filter((r: TabColorRule) => {
+            const name = String(r.name || '').toLowerCase();
+            const pattern = String(r.pattern || '').toLowerCase();
+            const container = String(r.containerName || '').toLowerCase();
+            return !name.includes('azure') && !pattern.includes('azure') && !container.includes('azure');
+          });
+          if (parsed.rules.length === 0) {
+            parsed.rules = INITIAL_RULES;
+          }
+        }
+
+        // Default to safe container mode and disabled window theme override if not set
+        if (!parsed.defaultColor) parsed.defaultColor = '#37adff';
+        if (!parsed.defaultContainerColor) parsed.defaultContainerColor = 'blue';
+        if (!parsed.defaultMode) parsed.defaultMode = 'container';
+        if (parsed.enableActiveTabTheme === undefined) parsed.enableActiveTabTheme = false;
+
         return parsed;
       }
     } catch (e) {}
@@ -69,6 +90,24 @@ export default function App() {
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
+  };
+
+  const handleChangeConfig = (updated: Partial<ExtensionConfig>) => {
+    setConfig((prev) => ({
+      ...prev,
+      ...updated,
+    }));
+    showToast('Standard-Einstellungen aktualisiert!');
+  };
+
+  const handleResetToDummyDefaults = () => {
+    if (confirm('Alle Regeln auf die sauberen Standard-Dummy-Regeln zurücksetzen? Eventuell vorhandene alte Cloud/Azure-Regeln werden gelöscht.')) {
+      setConfig((prev) => ({
+        ...prev,
+        rules: DUMMY_RULES,
+      }));
+      showToast('Standard-Dummy-Regeln erfolgreich wiederhergestellt!');
+    }
   };
 
   const handleUpdateRules = (newRules: TabColorRule[]) => {
@@ -106,11 +145,11 @@ export default function App() {
         name: cleanHost || 'Custom Rule',
         patternType: 'domain',
         pattern: cleanHost || url,
-        color: '#ff4f5e',
-        firefoxContainerColor: 'red',
+        color: config.defaultColor || '#37adff',
+        firefoxContainerColor: config.defaultContainerColor || 'blue',
         firefoxContainerIcon: 'circle',
         containerName: cleanHost || 'Custom',
-        colorMode: 'hybrid',
+        colorMode: config.defaultMode || 'container',
         accentBorder: true,
         enabled: true,
         priority: 1,
@@ -182,6 +221,14 @@ export default function App() {
                 setEditingRule(null);
                 setIsRuleModalOpen(true);
               }}
+              onEditRule={(rule) => {
+                setEditingRule(rule);
+                setIsRuleModalOpen(true);
+              }}
+              onUpdateRule={(updatedRule) => {
+                const nextRules = config.rules.map((r) => r.id === updatedRule.id ? updatedRule : r);
+                handleUpdateRules(nextRules);
+              }}
             />
             <UrlTesterBar
               rules={config.rules}
@@ -192,6 +239,11 @@ export default function App() {
 
         {activeTab === 'rules' && (
           <div className="space-y-6">
+            <DefaultSettingsCard
+              config={config}
+              onChangeConfig={handleChangeConfig}
+              onResetToDummyDefaults={handleResetToDummyDefaults}
+            />
             <UrlTesterBar
               rules={config.rules}
               onAddRuleForUrl={handleAddRuleForUrl}
@@ -207,6 +259,10 @@ export default function App() {
                 setEditingRule(rule);
                 setIsRuleModalOpen(true);
               }}
+              defaultColor={config.defaultColor}
+              defaultContainerColor={config.defaultContainerColor}
+              defaultMode={config.defaultMode}
+              onResetToDummyDefaults={handleResetToDummyDefaults}
             />
           </div>
         )}
@@ -292,6 +348,9 @@ export default function App() {
         }}
         onSave={handleSaveRule}
         initialRule={editingRule}
+        defaultColor={config.defaultColor}
+        defaultContainerColor={config.defaultContainerColor}
+        defaultMode={config.defaultMode}
       />
 
       {/* Modal for bumping extension version */}

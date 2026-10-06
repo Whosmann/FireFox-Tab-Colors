@@ -369,12 +369,52 @@ initExtension();
     indicatorEl.style.backgroundColor = color;
   }
 
-  function updateTitleEmoji(emoji) {
-    if (!emoji) return;
-    if (!document.title.startsWith(emoji)) {
-      document.title = emoji + ' ' + document.title;
+  let titleObserver = null;
+  let activeEmoji = null;
+  let isUpdatingTitle = false;
+  let titleIntervalId = null;
+
+  function ensureTitlePrefix() {
+    if (!activeEmoji || isUpdatingTitle) return;
+    const current = document.title || '';
+    if (!current.startsWith(activeEmoji)) {
+      isUpdatingTitle = true;
+      try {
+        document.title = activeEmoji + ' ' + current;
+      } catch (e) {}
+      setTimeout(() => { isUpdatingTitle = false; }, 20);
     }
   }
+
+  function updateTitleEmoji(emoji) {
+    if (!emoji) return;
+    activeEmoji = emoji;
+    ensureTitlePrefix();
+
+    // 1. Observe entire document head and title for DOM changes
+    if (!titleObserver) {
+      try {
+        const root = document.head || document.documentElement;
+        if (root) {
+          titleObserver = new MutationObserver(() => {
+            ensureTitlePrefix();
+          });
+          titleObserver.observe(root, { subtree: true, characterData: true, childList: true });
+        }
+      } catch (e) {}
+    }
+
+    // 2. Continuous guard for SPAs and in-page function clicks that overwrite document.title
+    if (!titleIntervalId) {
+      titleIntervalId = setInterval(ensureTitlePrefix, 300);
+    }
+  }
+
+  // Intercept client-side SPA navigation & clicks
+  window.addEventListener('popstate', () => { setTimeout(ensureTitlePrefix, 50); });
+  window.addEventListener('hashchange', () => { setTimeout(ensureTitlePrefix, 50); });
+
+  let originalFaviconHref = null;
 
   function renderFaviconEmoji(emoji, color) {
     if (!emoji) return;
@@ -402,23 +442,88 @@ initExtension();
         link = document.createElement('link');
         link.rel = 'shortcut icon';
         document.head.appendChild(link);
+      } else if (!originalFaviconHref) {
+        originalFaviconHref = link.href;
       }
       link.href = canvas.toDataURL('image/png');
     } catch (e) {}
   }
 
+  function removeFaviconEmoji() {
+    try {
+      let link = document.querySelector("link[rel*='icon']");
+      if (link && originalFaviconHref) {
+        link.href = originalFaviconHref;
+      }
+    } catch (e) {}
+  }
+
+  function removeTopBar() {
+    if (indicatorEl) {
+      indicatorEl.remove();
+      indicatorEl = null;
+    }
+  }
+
+  function removeTitleEmoji() {
+    if (titleIntervalId) {
+      clearInterval(titleIntervalId);
+      titleIntervalId = null;
+    }
+    if (titleObserver) {
+      titleObserver.disconnect();
+      titleObserver = null;
+    }
+    if (activeEmoji) {
+      if (document.title.startsWith(activeEmoji + ' ')) {
+        document.title = document.title.substring((activeEmoji + ' ').length);
+      } else if (document.title.startsWith(activeEmoji)) {
+        document.title = document.title.substring(activeEmoji.length).trimStart();
+      }
+      activeEmoji = null;
+    }
+    const knownSymbols = [
+      '⬇️', '⬇', '⬆️', '⬆', '📥', '📦', '🚀', '⚡', '🔒', '📁', '🛒', '🧪', '📊', '⚙️', '⚙',
+      '🔴', '🔵', '🟢', '🟡', '💰'
+    ];
+    for (let i = 0; i < knownSymbols.length; i++) {
+      const sym = knownSymbols[i];
+      if (document.title.startsWith(sym + ' ')) {
+        document.title = document.title.substring((sym + ' ').length);
+        break;
+      } else if (document.title.startsWith(sym)) {
+        document.title = document.title.substring(sym.length).trimStart();
+        break;
+      }
+    }
+  }
+
   function applyRuleVisuals(rule) {
-    if (!rule) return;
+    if (!rule) {
+      removeTopBar();
+      removeTitleEmoji();
+      removeFaviconEmoji();
+      return;
+    }
     if (rule.accentBorder) {
       renderTopBar(rule.color);
+    } else {
+      removeTopBar();
     }
     if (rule.customEmoji) {
       if (rule.enableTitleEmoji !== false) {
         updateTitleEmoji(rule.customEmoji);
+      } else {
+        removeTitleEmoji();
       }
       if (rule.enableFaviconEmoji !== false) {
         renderFaviconEmoji(rule.customEmoji, rule.color);
+      } else {
+        removeFaviconEmoji();
       }
+    } else {
+      removeTitleEmoji();
+      removeFaviconEmoji();
     }
   }
 
@@ -436,15 +541,28 @@ initExtension();
     if (msg.action === 'UPDATE_ACCENT_COLOR') {
       if (msg.accentBorder || msg.enableTopBar) {
         renderTopBar(msg.color);
+      } else {
+        removeTopBar();
       }
       if (msg.customEmoji) {
-        if (msg.enableTitleEmoji) {
+        if (msg.enableTitleEmoji !== false) {
           updateTitleEmoji(msg.customEmoji);
+        } else {
+          removeTitleEmoji();
         }
-        if (msg.enableFaviconEmoji) {
+        if (msg.enableFaviconEmoji !== false) {
           renderFaviconEmoji(msg.customEmoji, msg.color);
+        } else {
+          removeFaviconEmoji();
         }
+      } else {
+        removeTitleEmoji();
+        removeFaviconEmoji();
       }
+    } else if (msg.action === 'CLEAR_ACCENT_COLOR') {
+      removeTopBar();
+      removeTitleEmoji();
+      removeFaviconEmoji();
     }
   });
 })();
@@ -725,7 +843,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       <div class="form-group">
         <label class="form-label" for="inp-name">Rule Name / Label</label>
-        <input type="text" id="inp-name" class="form-input" placeholder="e.g. AWS Production Console, GitHub">
+        <input type="text" id="inp-name" class="form-input" placeholder="e.g. Production Service, Staging API">
       </div>
 
       <div class="form-group">
@@ -734,7 +852,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <option value="domain">Domain (Matches domain and all subdomains)</option>
           <option value="exact_host">Exact Host (Only this exact host/subdomain, e.g. 248924.4.whomsann.de)</option>
           <option value="wildcard">Wildcard (e.g. *.staging.com/*, localhost:*)</option>
-          <option value="prefix">Prefix (e.g. https://console.aws.amazon.com/)</option>
+          <option value="prefix">Prefix (e.g. https://prod.example.com/)</option>
           <option value="regex">Regular Expression (e.g. ^https?:\/\/(prod|live)\..*)</option>
           <option value="exact">Exact URL (Full address equality)</option>
         </select>
@@ -772,8 +890,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       <div class="form-group">
         <label class="form-label">Custom Tab Symbol / Emoji (e.g. ⬇️ for Import)</label>
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
           <input type="text" id="inp-emoji" class="form-input" style="width:72px; text-align:center; font-size:16px;" placeholder="⬇️">
+          <button type="button" id="btn-clear-emoji" class="btn btn-secondary" style="padding:5px 10px; font-size:12px; color:#f43f5e;" title="Symbol entfernen">✕ Symbol entfernen</button>
           <div style="display:flex; gap:4px; flex-wrap:wrap;">
             <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬇️" style="padding:4px 8px; font-size:12px;">⬇️ Import</button>
             <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⬆️" style="padding:4px 8px; font-size:12px;">⬆️ Export</button>
@@ -783,7 +902,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <button type="button" class="btn btn-secondary opt-sym-btn" data-sym="⚡" style="padding:4px 8px; font-size:12px;">⚡ Dev</button>
           </div>
         </div>
-        <div class="form-hint">Custom symbol prepended to the tab title, favicon, and container name.</div>
+        <div class="form-hint">Custom symbol prepended to the tab title, favicon, and container name (can be removed anytime).</div>
       </div>
 
       <div class="form-group">
@@ -1129,14 +1248,17 @@ function openModal(index) {
     inpName.value = '';
     inpType.value = 'domain';
     inpPattern.value = '';
-    inpHex.value = '#37adff';
-    selectedColorName = 'blue';
-    selectedColorHex = '#37adff';
+    const defColor = appConfig.defaultColor || '#37adff';
+    const defContainer = appConfig.defaultContainerColor || 'blue';
+    const defMode = appConfig.defaultMode || 'container';
+    inpHex.value = defColor;
+    selectedColorName = defContainer;
+    selectedColorHex = defColor;
     selectedIcon = 'circle';
     inpIcon.value = selectedIcon;
     inpContainerName.value = '';
     if (inpEmoji) inpEmoji.value = '';
-    inpMode.value = 'hybrid';
+    inpMode.value = defMode;
     inpTopBar.checked = true;
     inpEnabled.checked = true;
   }
@@ -1276,10 +1398,24 @@ document.querySelectorAll('.opt-sym-btn').forEach((btn) => {
     const sym = btn.getAttribute('data-sym');
     const inp = document.getElementById('inp-emoji');
     if (inp) {
-      inp.value = sym;
+      inp.value = (inp.value === sym) ? '' : sym;
+      updatePreview();
     }
   });
 });
+
+const btnClearEmoji = document.getElementById('btn-clear-emoji');
+if (btnClearEmoji) {
+  btnClearEmoji.addEventListener('click', () => {
+    const inp = document.getElementById('inp-emoji');
+    if (inp) {
+      inp.value = '';
+      updatePreview();
+    }
+  });
+}
+
+document.getElementById('inp-emoji')?.addEventListener('input', updatePreview);
 
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('modal-cancel').addEventListener('click', closeModal);
@@ -1308,17 +1444,52 @@ document.getElementById('btn-import').addEventListener('click', () => {
     reader.onload = async (event) => {
       try {
         const parsed = JSON.parse(event.target.result);
+        let rawRules = [];
         if (Array.isArray(parsed)) {
-          appConfig.rules = parsed;
-          await saveConfigToStorage();
-          renderRules();
-          alert('Rules imported successfully!');
+          rawRules = parsed;
         } else if (parsed.rules && Array.isArray(parsed.rules)) {
-          appConfig = parsed;
-          await saveConfigToStorage();
-          renderRules();
-          alert('Rules imported successfully!');
+          rawRules = parsed.rules;
+          if (parsed.defaultColor) appConfig.defaultColor = parsed.defaultColor;
+          if (parsed.defaultContainerColor) appConfig.defaultContainerColor = parsed.defaultContainerColor;
+          if (parsed.defaultMode) appConfig.defaultMode = parsed.defaultMode;
+        } else {
+          alert('Invalid JSON file.');
+          return;
         }
+
+        // Exclude any azure or proprietary cloud rule
+        const sanitized = rawRules.filter((r) => {
+          const n = String(r.name || '').toLowerCase();
+          const p = String(r.pattern || '').toLowerCase();
+          const c = String(r.containerName || '').toLowerCase();
+          return !n.includes('azure') && !p.includes('azure') && !c.includes('azure');
+        });
+
+        const defColor = appConfig.defaultColor || '#37adff';
+        const defContainer = appConfig.defaultContainerColor || 'blue';
+        const defMode = appConfig.defaultMode || 'container';
+
+        appConfig.rules = sanitized.map((r, i) => ({
+          id: r.id || 'rule-' + Date.now() + '-' + i,
+          name: r.name || 'Rule ' + (i + 1),
+          patternType: r.patternType || 'domain',
+          pattern: r.pattern || '',
+          color: r.color || defColor,
+          firefoxContainerColor: r.firefoxContainerColor || defContainer,
+          firefoxContainerIcon: r.firefoxContainerIcon || 'circle',
+          customEmoji: r.customEmoji || '',
+          enableTitleEmoji: r.enableTitleEmoji !== false,
+          enableFaviconEmoji: r.enableFaviconEmoji !== false,
+          containerName: r.containerName || r.name || 'Container',
+          colorMode: r.colorMode || defMode,
+          accentBorder: r.accentBorder !== false,
+          enabled: r.enabled !== false,
+          priority: i + 1,
+        }));
+
+        await saveConfigToStorage();
+        renderRules();
+        alert('Rules imported successfully (' + appConfig.rules.length + ' rules)!');
       } catch (err) {
         alert('Invalid JSON file.');
       }

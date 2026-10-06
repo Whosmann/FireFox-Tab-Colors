@@ -18,6 +18,9 @@ interface RuleEditorModalProps {
   onClose: () => void;
   onSave: (rule: TabColorRule) => void;
   initialRule?: TabColorRule | null;
+  defaultColor?: string;
+  defaultContainerColor?: FirefoxContainerColor;
+  defaultMode?: ColorMode;
 }
 
 const CONTAINER_ICONS: { id: FirefoxContainerIcon; label: string; icon: string; category: string }[] = [
@@ -40,13 +43,16 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
   onClose,
   onSave,
   initialRule,
+  defaultColor = '#37adff',
+  defaultContainerColor = 'blue',
+  defaultMode = 'container',
 }) => {
   const [name, setName] = useState(initialRule?.name || '');
   const [patternType, setPatternType] = useState<UrlPatternType>(initialRule?.patternType || 'domain');
   const [pattern, setPattern] = useState(initialRule?.pattern || '');
-  const [color, setColor] = useState(initialRule?.color || '#ff4f5e');
+  const [color, setColor] = useState(initialRule?.color || defaultColor);
   const [containerColor, setContainerColor] = useState<FirefoxContainerColor>(
-    initialRule?.firefoxContainerColor || 'red'
+    initialRule?.firefoxContainerColor || defaultContainerColor
   );
   const [containerIcon, setContainerIcon] = useState<FirefoxContainerIcon>(
     initialRule?.firefoxContainerIcon || 'circle'
@@ -55,7 +61,7 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
   const [customEmoji, setCustomEmoji] = useState(initialRule?.customEmoji || '');
   const [enableTitleEmoji, setEnableTitleEmoji] = useState(initialRule?.enableTitleEmoji ?? true);
   const [enableFaviconEmoji, setEnableFaviconEmoji] = useState(initialRule?.enableFaviconEmoji ?? true);
-  const [colorMode, setColorMode] = useState<ColorMode>(initialRule?.colorMode || 'hybrid');
+  const [colorMode, setColorMode] = useState<ColorMode>(initialRule?.colorMode || defaultMode);
   const [accentBorder, setAccentBorder] = useState(initialRule?.accentBorder ?? true);
   const [enabled, setEnabled] = useState(initialRule?.enabled ?? true);
 
@@ -66,33 +72,50 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
         setName(initialRule.name || '');
         setPatternType(initialRule.patternType || 'domain');
         setPattern(initialRule.pattern || '');
-        setColor(initialRule.color || '#ff4f5e');
-        setContainerColor(initialRule.firefoxContainerColor || 'red');
+        setColor(initialRule.color || defaultColor);
+        setContainerColor(initialRule.firefoxContainerColor || defaultContainerColor);
         setContainerIcon(initialRule.firefoxContainerIcon || 'circle');
         setContainerName(initialRule.containerName || '');
         setCustomEmoji(initialRule.customEmoji || '');
         setEnableTitleEmoji(initialRule.enableTitleEmoji ?? true);
         setEnableFaviconEmoji(initialRule.enableFaviconEmoji ?? true);
-        setColorMode(initialRule.colorMode || 'hybrid');
+        setColorMode(initialRule.colorMode || defaultMode);
         setAccentBorder(initialRule.accentBorder ?? true);
         setEnabled(initialRule.enabled ?? true);
       } else {
         setName('');
         setPatternType('domain');
         setPattern('');
-        setColor('#37adff');
-        setContainerColor('blue');
+        setColor(defaultColor);
+        setContainerColor(defaultContainerColor);
         setContainerIcon('circle');
         setContainerName('');
         setCustomEmoji('');
         setEnableTitleEmoji(true);
         setEnableFaviconEmoji(true);
-        setColorMode('hybrid');
+        setColorMode(defaultMode);
         setAccentBorder(true);
         setEnabled(true);
       }
     }
-  }, [isOpen, initialRule]);
+  }, [isOpen, initialRule, defaultColor, defaultContainerColor, defaultMode]);
+
+  const handleApplyDefaults = () => {
+    setColor(defaultColor);
+    setContainerColor(defaultContainerColor);
+    setColorMode(defaultMode);
+  };
+
+  const handleRemoveEmoji = () => {
+    if (customEmoji) {
+      let cleanContainer = containerName;
+      if (cleanContainer.startsWith(customEmoji)) {
+        cleanContainer = cleanContainer.slice(customEmoji.length).trim();
+      }
+      setContainerName(cleanContainer);
+    }
+    setCustomEmoji('');
+  };
 
   if (!isOpen) return null;
 
@@ -142,9 +165,19 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <div>
-            <h3 className="text-base font-bold text-slate-900">
-              {initialRule ? 'Edit Tab Color Rule' : 'Create URL Tab Color Rule'}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-slate-900">
+                {initialRule ? 'Edit Tab Color Rule' : 'Create URL Tab Color Rule'}
+              </h3>
+              <button
+                type="button"
+                onClick={handleApplyDefaults}
+                title="Wendet das konfigurierte Standard-Farbschema (Farbe, Container & Modus) auf diese Regel an"
+                className="text-[11px] font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-2 py-0.5 rounded-md transition-colors"
+              >
+                Standard-Farbschema übernehmen
+              </button>
+            </div>
             <p className="text-xs text-slate-500 mt-0.5">
               Specify the URL matching criteria and designated Firefox tab color.
             </p>
@@ -172,7 +205,7 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 setName(e.target.value);
                 if (!containerName) setContainerName(e.target.value);
               }}
-              placeholder="e.g. AWS Production Console, Staging API, GitHub"
+              placeholder="e.g. Production Service, Staging API, Dev Portal"
               className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
             />
           </div>
@@ -217,13 +250,13 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 onChange={(e) => setPattern(e.target.value)}
                 placeholder={
                   patternType === 'domain'
-                    ? 'e.g. whomsann.de or github.com'
+                    ? 'e.g. whomsann.de or example.com'
                     : patternType === 'exact_host'
                     ? 'e.g. 248924.4.whomsann.de (isolates other subdomains!)'
                     : patternType === 'wildcard'
                     ? 'e.g. *.staging.com/* or localhost:*'
                     : patternType === 'prefix'
-                    ? 'e.g. https://console.aws.amazon.com/'
+                    ? 'e.g. https://prod.example.com/'
                     : patternType === 'regex'
                     ? 'e.g. ^https?:\\/\\/(prod|production)\\.example\\.com\\/.*'
                     : 'e.g. https://admin.internal.net/dashboard'
@@ -322,7 +355,7 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
               type="text"
               value={containerName}
               onChange={(e) => setContainerName(e.target.value)}
-              placeholder="e.g. Work, Staging, AWS"
+              placeholder="e.g. Work, Staging, Production"
               className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
             <span className="text-[10px] text-slate-400 mt-0.5 block">
@@ -342,9 +375,19 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 </span>
               </div>
               {customEmoji && (
-                <span className="text-xs font-mono font-bold bg-white px-2 py-0.5 rounded border border-sky-300 text-sky-800 shadow-2xs">
-                  Aktiv: {customEmoji}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold bg-white px-2 py-0.5 rounded border border-sky-300 text-sky-800 shadow-2xs">
+                    Aktiv: {customEmoji}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveEmoji}
+                    className="px-2.5 py-0.5 rounded-md text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 transition-colors shadow-2xs flex items-center gap-1"
+                    title="Angehängtes Symbol entfernen"
+                  >
+                    <span>✕ Symbol entfernen</span>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -371,7 +414,7 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                     type="button"
                     onClick={() => {
                       if (isSelected) {
-                        setCustomEmoji('');
+                        handleRemoveEmoji();
                       } else {
                         setCustomEmoji(emoji);
                         if (!containerName) {
@@ -393,16 +436,16 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
               {customEmoji && (
                 <button
                   type="button"
-                  onClick={() => setCustomEmoji('')}
-                  className="px-2 py-1 rounded-lg text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200"
+                  onClick={handleRemoveEmoji}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 transition-colors shadow-2xs flex items-center gap-1"
                 >
-                  ✕ Entfernen
+                  <span>✕ Symbol entfernen</span>
                 </button>
               )}
             </div>
 
             {/* Custom Symbol Free Input */}
-            <div className="flex items-center gap-2 pt-1">
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
               <span className="text-xs text-slate-600 whitespace-nowrap">Freies Zeichen:</span>
               <input
                 type="text"
@@ -411,8 +454,17 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 placeholder="z. B. ⬇️ oder 📥 oder [IMP]"
                 className="w-28 px-2 py-1 text-xs font-mono text-center bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
+              {customEmoji && (
+                <button
+                  type="button"
+                  onClick={handleRemoveEmoji}
+                  className="px-2 py-1 rounded-md text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors"
+                >
+                  ✕ Löschen
+                </button>
+              )}
               <span className="text-[11px] text-slate-500">
-                Wird direkt im Firefox Tab-Reiter und Container-Label dargestellt.
+                Wird direkt im Firefox Tab-Reiter und Container-Label dargestellt (jederzeit entfernbar).
               </span>
             </div>
 
@@ -425,7 +477,7 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                   onChange={(e) => setEnableTitleEmoji(e.target.checked)}
                   className="rounded text-sky-600 focus:ring-sky-500"
                 />
-                <span>Symbol im Tab-Titel anzeigen (z. B. <code>{customEmoji || '⬇️'} Meine Importseite</code>)</span>
+                <span>Symbol im Tab-Titel voranstellen (z. B. <code>{customEmoji || '⬇️'} Meine Importseite</code>)</span>
               </label>
 
               <label className="flex items-center gap-2 cursor-pointer text-slate-700">
@@ -435,8 +487,58 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                   onChange={(e) => setEnableFaviconEmoji(e.target.checked)}
                   className="rounded text-sky-600 focus:ring-sky-500"
                 />
-                <span>Symbol als Tab-Favicon darstellen (ersetzt/überlagert das Webseiten-Icon)</span>
+                <span>Symbol als Tab-Favicon darstellen (ersetzt/überlagert das Webseiten-Icon mit {customEmoji || '⬇️'})</span>
               </label>
+            </div>
+
+            {/* Live-Vorschau: So wird das Symbol in Firefox angehängt */}
+            <div className="bg-white rounded-lg p-3 border border-sky-200 space-y-2">
+              <div className="text-[11px] font-bold text-sky-950 flex items-center justify-between">
+                <span>Vorschau: So wird das Symbol sichtbar angehängt</span>
+                {customEmoji ? (
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold flex items-center gap-1">
+                    <span>✓</span>
+                    <span>Symbol aktiv: {customEmoji}</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400">Kein Symbol gewählt</span>
+                )}
+              </div>
+
+              {/* Firefox Tab Simulation */}
+              <div className="bg-slate-900 rounded-md p-2 flex items-center gap-2 text-white text-xs">
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-800 border-t-2 max-w-xs shadow-xs"
+                  style={{ borderTopColor: color }}
+                >
+                  <span className="text-sm shrink-0">
+                    {customEmoji && enableFaviconEmoji ? customEmoji : '🌐'}
+                  </span>
+                  <span className="truncate text-xs">
+                    {customEmoji && enableTitleEmoji && (
+                      <span className="inline-block px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-bold text-xs mr-1 border border-amber-300/40">
+                        {customEmoji}
+                      </span>
+                    )}
+                    <span className="font-medium">{name || 'Beispielseite'}</span>
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400">← Firefox Tab-Reiter</span>
+              </div>
+
+              {/* Firefox Container Badge Simulation */}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-[11px] text-slate-500 shrink-0">Container-Badge:</span>
+                <span
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold"
+                  style={{ backgroundColor: `${color}22`, color, border: `1px solid ${color}55` }}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                  {customEmoji && <span className="font-bold">{customEmoji}</span>}
+                  <span>{containerName || name || 'Container'}</span>
+                </span>
+                <span className="text-[10px] text-slate-400">(In der Adressleiste & Menü)</span>
+              </div>
             </div>
           </div>
 
@@ -486,18 +588,6 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
               <div className="grid grid-cols-3 gap-1.5 text-xs">
                 <button
                   type="button"
-                  onClick={() => setColorMode('hybrid')}
-                  className={`p-2 rounded-lg border text-left transition-all ${
-                    colorMode === 'hybrid'
-                      ? 'bg-white border-sky-500 text-slate-900 shadow-xs'
-                      : 'border-slate-200 text-slate-600 hover:bg-white'
-                  }`}
-                >
-                  <div className="font-semibold text-xs">Hybrid (Recommended)</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Container stripe + dynamic theme</div>
-                </button>
-                <button
-                  type="button"
                   onClick={() => setColorMode('container')}
                   className={`p-2 rounded-lg border text-left transition-all ${
                     colorMode === 'container'
@@ -505,8 +595,20 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                       : 'border-slate-200 text-slate-600 hover:bg-white'
                   }`}
                 >
-                  <div className="font-semibold text-xs">Container Tab Only</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Native tab stripe & cookie isolation</div>
+                  <div className="font-semibold text-xs">Container Only (Default)</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Farbschema bleibt unverändert (nur Tab-Linie & Badge)</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setColorMode('hybrid')}
+                  className={`p-2 rounded-lg border text-left transition-all ${
+                    colorMode === 'hybrid'
+                      ? 'bg-white border-sky-500 text-slate-900 shadow-xs'
+                      : 'border-slate-200 text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  <div className="font-semibold text-xs">Hybrid</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Container + Browser-Toolbar färben</div>
                 </button>
                 <button
                   type="button"
@@ -517,8 +619,8 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                       : 'border-slate-200 text-slate-600 hover:bg-white'
                   }`}
                 >
-                  <div className="font-semibold text-xs">Active Theme Only</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Tints tab bar when tab is active</div>
+                  <div className="font-semibold text-xs">Theme Only</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Nur Browserfenster einfärben</div>
                 </button>
               </div>
             </div>

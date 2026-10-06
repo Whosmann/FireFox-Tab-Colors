@@ -10,9 +10,10 @@ import {
   Upload, 
   Sparkles,
   Search,
-  Check
+  Check,
+  RotateCcw
 } from 'lucide-react';
-import { TabColorRule } from '../types/extension';
+import { TabColorRule, FirefoxContainerColor, ColorMode } from '../types/extension';
 import { PRESET_PACKS } from '../utils/presetRules';
 
 interface RuleManagerProps {
@@ -20,6 +21,10 @@ interface RuleManagerProps {
   onUpdateRules: (rules: TabColorRule[]) => void;
   onOpenCreateModal: () => void;
   onEditRule: (rule: TabColorRule) => void;
+  defaultColor?: string;
+  defaultContainerColor?: FirefoxContainerColor;
+  defaultMode?: ColorMode;
+  onResetToDummyDefaults?: () => void;
 }
 
 export const RuleManager: React.FC<RuleManagerProps> = ({
@@ -27,6 +32,10 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
   onUpdateRules,
   onOpenCreateModal,
   onEditRule,
+  defaultColor = '#37adff',
+  defaultContainerColor = 'blue',
+  defaultMode = 'container',
+  onResetToDummyDefaults,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -71,11 +80,31 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
   };
 
   const handleDeleteRule = (id: string) => {
-    const newRules = rules.filter((r) => r.id !== id);
-    newRules.forEach((r, idx) => {
-      r.priority = idx + 1;
+    const target = rules.find((r) => r.id === id);
+    const label = target?.name || target?.pattern || 'diese Regel';
+    if (confirm(`Regel "${label}" wirklich entfernen?`)) {
+      const newRules = rules.filter((r) => r.id !== id);
+      newRules.forEach((r, idx) => {
+        r.priority = idx + 1;
+      });
+      onUpdateRules(newRules);
+    }
+  };
+
+  const handleRemoveRuleEmoji = (id: string) => {
+    const updated = rules.map((r) => {
+      if (r.id !== id) return r;
+      let cleanContainer = r.containerName || '';
+      if (r.customEmoji && cleanContainer.startsWith(r.customEmoji)) {
+        cleanContainer = cleanContainer.slice(r.customEmoji.length).trim();
+      }
+      return {
+        ...r,
+        customEmoji: '',
+        containerName: cleanContainer || r.name,
+      };
     });
-    onUpdateRules(newRules);
+    onUpdateRules(updated);
   };
 
   const handleDuplicateRule = (rule: TabColorRule) => {
@@ -91,7 +120,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
   const handleLoadPreset = (packId: string) => {
     const pack = PRESET_PACKS.find((p) => p.id === packId);
     if (!pack) return;
-    if (confirm(`Load the "${pack.name}" preset pack? This will add ${pack.rules.length} pre-configured rules.`)) {
+    if (confirm(`Preset-Pack "${pack.name}" laden? Dies ersetzt die aktuellen Regeln durch ${pack.rules.length} Beispiel-Regeln.`)) {
       onUpdateRules(pack.rules);
     }
   };
@@ -113,17 +142,51 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
     reader.onload = (event) => {
       try {
         const parsed = JSON.parse(event.target?.result as string);
+        let rawRules: any[] = [];
         if (Array.isArray(parsed)) {
-          onUpdateRules(parsed);
-          alert(`Successfully imported ${parsed.length} rules!`);
-        } else if (parsed.rules && Array.isArray(parsed.rules)) {
-          onUpdateRules(parsed.rules);
-          alert(`Successfully imported ${parsed.rules.length} rules!`);
+          rawRules = parsed;
+        } else if (parsed && Array.isArray(parsed.rules)) {
+          rawRules = parsed.rules;
         } else {
-          alert('Invalid rules file structure.');
+          alert('Ungültige Struktur: Datei enthält keine Regeln.');
+          return;
         }
+
+        // Strictly filter out any rule referencing azure (im default darf kein azure auftauchen)
+        const sanitized = rawRules.filter((r) => {
+          const name = String(r.name || '').toLowerCase();
+          const pattern = String(r.pattern || '').toLowerCase();
+          const container = String(r.containerName || '').toLowerCase();
+          return !name.includes('azure') && !pattern.includes('azure') && !container.includes('azure');
+        });
+
+        // Prompt user: Apply standard default color scheme to imported rules?
+        const applyDefaults = confirm(
+          `Möchten Sie das konfigurierte Standard-Farbschema (Farbe: ${defaultColor}, Container: ${defaultContainerColor}, Modus: ${defaultMode}) als Default auf alle ${sanitized.length} importierten Regeln anwenden?\n\n[OK] = Standard-Farbschema auf alle Regeln anwenden\n[Abbrechen] = Farben aus der Datei beibehalten (und nur fehlende Werte mit Default auffüllen)`
+        );
+
+        const processed: TabColorRule[] = sanitized.map((r, idx) => ({
+          id: r.id || `rule-${Date.now()}-${idx}`,
+          name: r.name || `Importierte Regel ${idx + 1}`,
+          patternType: r.patternType || 'domain',
+          pattern: r.pattern || '',
+          color: applyDefaults ? defaultColor : (r.color || defaultColor),
+          firefoxContainerColor: applyDefaults ? defaultContainerColor : (r.firefoxContainerColor || defaultContainerColor),
+          firefoxContainerIcon: r.firefoxContainerIcon || 'circle',
+          customEmoji: r.customEmoji || '',
+          enableTitleEmoji: r.enableTitleEmoji ?? true,
+          enableFaviconEmoji: r.enableFaviconEmoji ?? true,
+          containerName: r.containerName || r.name || 'Container',
+          colorMode: applyDefaults ? defaultMode : (r.colorMode || defaultMode),
+          accentBorder: r.accentBorder ?? true,
+          enabled: r.enabled ?? true,
+          priority: idx + 1,
+        }));
+
+        onUpdateRules(processed);
+        alert(`${processed.length} Regeln erfolgreich importiert!`);
       } catch (err) {
-        alert('Could not parse JSON file.');
+        alert('Fehler beim Einlesen der JSON-Datei.');
       }
     };
     reader.readAsText(file);
@@ -152,20 +215,30 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
             <button
               onClick={() => {
                 const nextId = prompt(
-                  'Select Preset to load:\n1 = DevOps & Environments\n2 = Work vs Personal\n3 = Multi-Cloud Consoles'
+                  'Wählen Sie ein Dummy-Preset zum Laden:\n1 = Standard Dummy Rules (Beispiel-Regeln)\n2 = Farbcodierte Muster (Farben-Demo)'
                 );
-                if (nextId === '1') handleLoadPreset('devops-environments');
-                if (nextId === '2') handleLoadPreset('work-life-balance');
-                if (nextId === '3') handleLoadPreset('cloud-infrastructure');
+                if (nextId === '1') handleLoadPreset('dummy-standard');
+                if (nextId === '2') handleLoadPreset('dummy-colors');
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Load Preset Pack</span>
+              <span>Dummy-Presets</span>
             </button>
           </div>
 
-          <label className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer">
+          {onResetToDummyDefaults && (
+            <button
+              onClick={onResetToDummyDefaults}
+              title="Setzt alle Regeln auf die sauberen Standard-Dummy-Regeln zurück (ohne Cloud/Azure)"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-sky-600" />
+              <span>Dummy-Reset</span>
+            </button>
+          )}
+
+          <label className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer" title="Importiert Regeln und bietet an, das Standard-Farbschema als Default zu verwenden">
             <Upload className="w-3.5 h-3.5" />
             <span>Import JSON</span>
             <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
@@ -292,8 +365,22 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                       >
                         <div className="flex items-center gap-1.5 group">
                           {rule.customEmoji && (
-                            <span className="text-sm font-normal shrink-0" title={`Symbol: ${rule.customEmoji}`}>
-                              {rule.customEmoji}
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 font-bold border border-amber-300 text-xs shrink-0 shadow-2xs"
+                              title={`Angehängtes Tab-Symbol: ${rule.customEmoji} (Klicken zum Entfernen)`}
+                            >
+                              <span>{rule.customEmoji}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveRuleEmoji(rule.id);
+                                }}
+                                className="text-amber-600 hover:text-rose-700 hover:bg-rose-100 rounded px-1 transition-colors text-[10px] font-bold"
+                                title="Dieses Symbol aus der Regel entfernen"
+                              >
+                                ✕
+                              </button>
                             </span>
                           )}
                           <span>{rule.name}</span>
@@ -322,7 +409,12 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                       {/* Container Info */}
                       <td className="py-2.5 px-3 text-slate-700">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs">{rule.containerName}</span>
+                          {rule.customEmoji && (
+                            <span className="font-bold text-amber-600 text-xs shrink-0" title={`Angehängt: ${rule.customEmoji}`}>
+                              {rule.customEmoji}
+                            </span>
+                          )}
+                          <span className="text-xs font-medium">{rule.containerName}</span>
                           <span className="text-[10px] text-slate-400">({rule.firefoxContainerIcon})</span>
                         </div>
                       </td>

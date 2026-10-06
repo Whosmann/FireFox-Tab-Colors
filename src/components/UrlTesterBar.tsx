@@ -42,10 +42,10 @@ export const UrlTesterBar: React.FC<UrlTesterBarProps> = ({ rules, onAddRuleForU
             248923.32.whomsann.de
           </button>
           <button
-            onClick={() => setTestUrl('https://console.aws.amazon.com/ec2/home')}
+            onClick={() => setTestUrl('https://import.example.com/data')}
             className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors whitespace-nowrap text-xs"
           >
-            AWS Console
+            Import Service
           </button>
           <button
             onClick={() => setTestUrl('https://api.prod.company.net/v2/orders')}
