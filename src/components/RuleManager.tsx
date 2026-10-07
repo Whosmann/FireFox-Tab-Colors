@@ -76,14 +76,20 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
   const [customHexSync, setCustomHexSync] = useState('#37adff');
   const [customEmojiSync, setCustomEmojiSync] = useState('');
   const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
+  const [showOnlySelected, setShowOnlySelected] = useState(false);
 
-  // Filter rules by query
-  const filteredRules = rules.filter(
-    (r) =>
-      r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.pattern.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.containerName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter rules by query and selection filter
+  const filteredRules = rules.filter((r) => {
+    if (showOnlySelected && !selectedRuleIds.has(r.id)) return false;
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      r.name.toLowerCase().includes(q) ||
+      r.pattern.toLowerCase().includes(q) ||
+      r.containerName.toLowerCase().includes(q) ||
+      r.firefoxContainerColor.toLowerCase().includes(q)
+    );
+  });
 
   // Pattern occurrences map to detect duplicated patterns across rules
   const patternOccurrences = useMemo(() => {
@@ -105,6 +111,9 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
   const selectedCount = selectedRuleIds.size;
   const selectedActiveCount = selectedRulesList.filter((r) => r.enabled).length;
   const selectedInactiveCount = selectedCount - selectedActiveCount;
+  const visibleSelectedCount = filteredRules.filter((r) => selectedRuleIds.has(r.id)).length;
+  const hiddenSelectedCount = selectedCount - visibleSelectedCount;
+  const unselectedFilteredCount = filteredRules.length - visibleSelectedCount;
   const allFilteredAreSelected =
     filteredRules.length > 0 && filteredRules.every((r) => selectedRuleIds.has(r.id));
   const isIndeterminate =
@@ -130,18 +139,51 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
     setIsColorSyncOpen(false);
     setIsIconSyncOpen(false);
     if (allFilteredAreSelected) {
+      // Deselect only the currently visible rules
       setSelectedRuleIds((prev) => {
         const next = new Set(prev);
         filteredRules.forEach((r) => next.delete(r.id));
         return next;
       });
     } else {
+      // Add all visible rules to selection without wiping previous selections from other searches!
       setSelectedRuleIds((prev) => {
         const next = new Set(prev);
         filteredRules.forEach((r) => next.add(r.id));
         return next;
       });
     }
+  };
+
+  const handleAddFilteredToSelection = () => {
+    setSelectedRuleIds((prev) => {
+      const next = new Set(prev);
+      filteredRules.forEach((r) => next.add(r.id));
+      return next;
+    });
+    setNotification({
+      type: 'success',
+      text: `✓ ${unselectedFilteredCount} Treffer zur bestehenden Auswahl hinzugefügt (gesamt: ${selectedCount + unselectedFilteredCount} ausgewählt).`,
+    });
+  };
+
+  const handleSelectOnlyFiltered = () => {
+    setSelectedRuleIds(new Set(filteredRules.map((r) => r.id)));
+  };
+
+  const handleRestrictToFiltered = () => {
+    setSelectedRuleIds(new Set(filteredRules.map((r) => r.id)));
+  };
+
+  const handleToggleShowOnlySelected = () => {
+    if (!showOnlySelected && selectedCount === 0) {
+      setNotification({
+        type: 'info',
+        text: 'Es sind aktuell keine Regeln ausgewählt. Markieren Sie zuerst einige Regeln über die Suche oder Checkboxen.',
+      });
+      return;
+    }
+    setShowOnlySelected((prev) => !prev);
   };
 
   const handleClearSelection = () => {
@@ -615,25 +657,105 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
       )}
 
       {/* Search and Preset Quick Pills */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search rules by name, pattern, or container..."
-            className="w-full bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
-          />
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search rules by name, pattern, or container..."
+              className="w-full bg-white border border-slate-300 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs p-0.5 cursor-pointer"
+                title="Suche zurücksetzen"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Filter result badge */}
+            <span className="text-[11px] font-mono px-2 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
+              {showOnlySelected && searchQuery
+                ? `${filteredRules.length} Treffer in ${selectedCount} Ausgewählten`
+                : showOnlySelected
+                ? `⭐ ${filteredRules.length} Ausgewählte aktiv`
+                : searchQuery
+                ? `${filteredRules.length} von ${rules.length} Regeln`
+                : `Alle ${rules.length} Regeln`}
+            </span>
+
+            {/* Filter auf alle Ausgewählten umschalten */}
+            <button
+              type="button"
+              onClick={handleToggleShowOnlySelected}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                showOnlySelected
+                  ? 'bg-sky-600 text-white border-sky-600 shadow-xs ring-2 ring-sky-300'
+                  : selectedCount > 0
+                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 shadow-2xs'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Filtert die Tabelle so, dass nur die aktuell ausgewählten Regeln angezeigt werden"
+            >
+              <span>⭐</span>
+              <span>
+                {showOnlySelected
+                  ? `Nur Ausgewählte (${selectedCount}) [Alle zeigen]`
+                  : `Nur Ausgewählte anzeigen (${selectedCount})`}
+              </span>
+            </button>
+
+            {/* Selektiv vergrößern: Treffer zur Auswahl hinzufügen */}
+            {searchQuery && filteredRules.length > 0 && (
+              <button
+                type="button"
+                onClick={handleAddFilteredToSelection}
+                className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
+                  allFilteredAreSelected
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 opacity-80'
+                    : 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-500 shadow-xs'
+                }`}
+                title="Fügt die aktuellen Suchtreffer zur bestehenden Auswahl hinzu (Auswahl schrittweise erweitern)"
+              >
+                <span>➕</span>
+                <span>
+                  {allFilteredAreSelected
+                    ? `✓ ${filteredRules.length} Treffer in Auswahl`
+                    : `+${unselectedFilteredCount} Treffer zur Auswahl hinzufügen`}
+                </span>
+              </button>
+            )}
+
+            {/* Nur diese Treffer auswählen */}
+            {searchQuery && filteredRules.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSelectOnlyFiltered}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 transition-colors cursor-pointer whitespace-nowrap"
+                title="Wählt ausschließlich die aktuellen Treffer aus und deselektiert alle anderen"
+              >
+                <span>☑️</span>
+                <span>Nur diese Treffer ({filteredRules.length})</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
           <span className="text-slate-400">Presets:</span>
           {PRESET_PACKS.map((pack) => (
             <button
               key={pack.id}
               onClick={() => handleLoadPreset(pack.id)}
-              className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors text-xs whitespace-nowrap"
+              className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors text-xs whitespace-nowrap cursor-pointer"
             >
               {pack.name}
             </button>
@@ -660,13 +782,46 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
               <span className="text-slate-400 font-medium">{selectedInactiveCount} inaktiv</span>
             </div>
 
-            {selectedCount < filteredRules.length && (
+            {searchQuery && hiddenSelectedCount > 0 && (
               <button
                 type="button"
-                onClick={handleSelectAllVisible}
-                className="text-xs text-sky-400 hover:text-sky-300 underline underline-offset-2 cursor-pointer"
+                onClick={handleSelectOnlyFiltered}
+                className="text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2 cursor-pointer font-medium"
+                title="Wählt alle nicht durch die Suche angezeigten Regeln ab"
               >
-                Alle {filteredRules.length} auswählen
+                🎯 Nur Treffer auswählen ({visibleSelectedCount})
+              </button>
+            )}
+
+            {!showOnlySelected && (
+              <button
+                type="button"
+                onClick={() => setShowOnlySelected(true)}
+                className="text-xs text-amber-300 hover:text-amber-200 underline underline-offset-2 cursor-pointer font-medium"
+                title="Tabelle filtern, sodass nur die ausgewählten Regeln angezeigt werden"
+              >
+                ⭐ Auf {selectedCount} Ausgewählte filtern
+              </button>
+            )}
+
+            {showOnlySelected && (
+              <button
+                type="button"
+                onClick={() => setShowOnlySelected(false)}
+                className="text-xs text-sky-300 hover:text-sky-200 underline underline-offset-2 cursor-pointer font-medium"
+                title="Alle Regeln wieder in der Tabelle anzeigen"
+              >
+                🌐 Alle Regeln anzeigen
+              </button>
+            )}
+
+            {unselectedFilteredCount > 0 && (
+              <button
+                type="button"
+                onClick={handleAddFilteredToSelection}
+                className="text-xs text-emerald-400 hover:text-emerald-300 underline underline-offset-2 cursor-pointer font-medium"
+              >
+                ➕ +{unselectedFilteredCount} Treffer dazunehmen
               </button>
             )}
           </div>
@@ -1236,21 +1391,39 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
               ) : (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-500">
-                    <div className="max-w-xs mx-auto space-y-2">
-                      <div className="text-2xl">📋</div>
-                      <div className="font-semibold text-slate-800">No matching rules found</div>
+                    <div className="max-w-sm mx-auto space-y-2">
+                      <div className="text-2xl">{showOnlySelected ? '⭐' : '📋'}</div>
+                      <div className="font-semibold text-slate-800">
+                        {showOnlySelected
+                          ? 'Keine ausgewählten Regeln passend zum Filter'
+                          : 'No matching rules found'}
+                      </div>
                       <p className="text-xs text-slate-500">
-                        {searchQuery
-                          ? 'Try clearing your search query or create a new rule.'
+                        {showOnlySelected
+                          ? selectedCount === 0
+                            ? 'Aktuell sind keine Regeln ausgewählt. Wählen Sie Regeln über die Tabelle aus.'
+                            : 'Keine der ausgewählten Regeln passt zu Ihrer Suche. Filter zurücksetzen oder alle Regeln anzeigen.'
+                          : searchQuery
+                          ? 'Versuchen Sie, die Suche zurückzusetzen oder eine neue Regel anzulegen.'
                           : 'Get started by creating your first URL color rule or loading a preset pack.'}
                       </p>
-                      <button
-                        onClick={onOpenCreateModal}
-                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-lg shadow-xs"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Create Rule</span>
-                      </button>
+                      {showOnlySelected ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowOnlySelected(false)}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-lg shadow-xs cursor-pointer"
+                        >
+                          Alle {rules.length} Regeln anzeigen
+                        </button>
+                      ) : (
+                        <button
+                          onClick={onOpenCreateModal}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-lg shadow-xs cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Create Rule</span>
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

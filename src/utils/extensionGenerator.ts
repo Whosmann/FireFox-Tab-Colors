@@ -115,6 +115,7 @@ async function initExtension() {
       if (!appConfig.defaultColor) appConfig.defaultColor = DEFAULT_CONFIG.defaultColor || '#37adff';
       if (!appConfig.defaultContainerColor) appConfig.defaultContainerColor = DEFAULT_CONFIG.defaultContainerColor || 'blue';
       if (!appConfig.defaultMode) appConfig.defaultMode = DEFAULT_CONFIG.defaultMode || 'container';
+      if (appConfig.enableFaviconContrastHalo === undefined) appConfig.enableFaviconContrastHalo = DEFAULT_CONFIG.enableFaviconContrastHalo !== false;
 
       // If re-packaged or updated with new version, ensure new default rules and settings are merged
       if (isNewVersion) {
@@ -318,7 +319,11 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
 
     // If container routing is active for this rule
     if (rule.colorMode === 'container' || rule.colorMode === 'hybrid') {
-      const containerTitle = (rule.customEmoji ? rule.customEmoji + ' ' : '') + (rule.containerName || rule.name);
+      let baseName = (rule.containerName || rule.name || 'Container').trim();
+      if (rule.customEmoji && !baseName.startsWith(rule.customEmoji)) {
+        baseName = rule.customEmoji + ' ' + baseName;
+      }
+      const containerTitle = baseName;
       const container = await getOrCreateContainer(
         containerTitle,
         rule.firefoxContainerColor || 'blue',
@@ -354,10 +359,12 @@ async function notifyTabVisuals(tabId, rule) {
         customEmoji: rule.customEmoji,
         enableTitleEmoji: rule.enableTitleEmoji !== false,
         enableFaviconEmoji: rule.enableFaviconEmoji !== false,
+        enableFaviconHalo: rule.enableFaviconHalo !== undefined ? rule.enableFaviconHalo : (appConfig.enableFaviconContrastHalo !== false),
       });
     } else {
       await browser.tabs.sendMessage(tabId, {
         action: 'CLEAR_ACCENT_COLOR',
+        enableFaviconHalo: appConfig.enableFaviconContrastHalo !== false,
       });
     }
   } catch (err) {}
@@ -399,7 +406,7 @@ browser.runtime.onMessage.addListener(async (message) => {
   }
   if (message.action === 'MATCH_URL') {
     const rule = findMatchingRule(message.url);
-    return { matched: !!rule, rule };
+    return { matched: !!rule, rule, enableFaviconContrastHalo: appConfig.enableFaviconContrastHalo !== false };
   }
   return null;
 });
@@ -503,9 +510,40 @@ initExtension();
   window.addEventListener('popstate', () => { setTimeout(ensureTitlePrefix, 50); });
   window.addEventListener('hashchange', () => { setTimeout(ensureTitlePrefix, 50); });
 
-  let originalFaviconHref = null;
+  let originalFaviconLinks = [];
+  let customFaviconElement = null;
 
-  function renderFaviconEmoji(emoji, color) {
+  function injectCustomFavicon(dataUrl) {
+    const targetParent = document.head || document.documentElement;
+    if (!targetParent) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => injectCustomFavicon(dataUrl), { once: true });
+      }
+      return;
+    }
+
+    // Cache original favicon links before modifying
+    if (originalFaviconLinks.length === 0) {
+      const existing = document.querySelectorAll("link[rel*='icon']");
+      existing.forEach((el) => {
+        originalFaviconLinks.push({ rel: el.rel, href: el.href, type: el.type || '', sizes: el.getAttribute('sizes') || '' });
+        el.remove();
+      });
+    } else {
+      document.querySelectorAll("link[rel*='icon']:not(#tabchroma-custom-favicon)").forEach((el) => el.remove());
+    }
+
+    if (!customFaviconElement || !customFaviconElement.parentNode) {
+      customFaviconElement = document.createElement('link');
+      customFaviconElement.id = 'tabchroma-custom-favicon';
+      customFaviconElement.rel = 'icon';
+      customFaviconElement.type = 'image/png';
+      targetParent.appendChild(customFaviconElement);
+    }
+    customFaviconElement.href = dataUrl;
+  }
+
+  function renderFaviconEmoji(emoji, color, withHalo) {
     if (!emoji) return;
     try {
       const canvas = document.createElement('canvas');
@@ -517,32 +555,76 @@ initExtension();
       // Container background circle
       ctx.fillStyle = color || '#38bdf8';
       ctx.beginPath();
-      ctx.arc(16, 16, 15, 0, Math.PI * 2);
+      ctx.arc(16, 16, 14, 0, Math.PI * 2);
       ctx.fill();
 
+      // Halo-Kontur / Contrast border & shadow
+      if (withHalo !== false) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.stroke();
+      }
+
       // Draw custom symbol / emoji in the center
-      ctx.font = '18px sans-serif';
+      ctx.font = '17px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(emoji, 16, 18);
-
-      let link = document.querySelector("link[rel*='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'shortcut icon';
-        document.head.appendChild(link);
-      } else if (!originalFaviconHref) {
-        originalFaviconHref = link.href;
+      if (withHalo !== false) {
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
+        ctx.shadowBlur = 4;
       }
-      link.href = canvas.toDataURL('image/png');
+      ctx.fillText(emoji, 16, 17);
+
+      injectCustomFavicon(canvas.toDataURL('image/png'));
+    } catch (e) {}
+  }
+
+  function applyFaviconHalo(withHalo) {
+    if (!withHalo) {
+      removeFaviconEmoji();
+      return;
+    }
+
+    let existingLink = document.querySelector("link[rel*='icon']");
+    let candidateSrc = existingLink ? existingLink.href : (window.location.origin ? (window.location.origin + '/favicon.ico') : null);
+    if (!candidateSrc) return;
+
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 32;
+          canvas.height = 32;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.filter = 'drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85))';
+          ctx.drawImage(img, 2, 2, 28, 28);
+          injectCustomFavicon(canvas.toDataURL('image/png'));
+        } catch (e) {}
+      };
+      img.src = candidateSrc;
     } catch (e) {}
   }
 
   function removeFaviconEmoji() {
     try {
-      let link = document.querySelector("link[rel*='icon']");
-      if (link && originalFaviconHref) {
-        link.href = originalFaviconHref;
+      if (customFaviconElement) {
+        customFaviconElement.remove();
+        customFaviconElement = null;
+      }
+      const targetParent = document.head || document.documentElement;
+      if (targetParent && originalFaviconLinks.length > 0) {
+        originalFaviconLinks.forEach((item) => {
+          const link = document.createElement('link');
+          link.rel = item.rel;
+          link.href = item.href;
+          if (item.type) link.type = item.type;
+          if (item.sizes) link.setAttribute('sizes', item.sizes);
+          targetParent.appendChild(link);
+        });
+        originalFaviconLinks = [];
       }
     } catch (e) {}
   }
@@ -587,11 +669,12 @@ initExtension();
     }
   }
 
-  function applyRuleVisuals(rule) {
+  function applyRuleVisuals(rule, globalHalo) {
     if (!rule) {
       removeTopBar();
       removeTitleEmoji();
       removeFaviconEmoji();
+      applyFaviconHalo(false);
       return;
     }
     if (rule.accentBorder) {
@@ -599,6 +682,7 @@ initExtension();
     } else {
       removeTopBar();
     }
+    const withHalo = (rule.enableFaviconHalo !== undefined) ? rule.enableFaviconHalo : (globalHalo !== false);
     if (rule.customEmoji) {
       if (rule.enableTitleEmoji !== false) {
         updateTitleEmoji(rule.customEmoji);
@@ -606,13 +690,15 @@ initExtension();
         removeTitleEmoji();
       }
       if (rule.enableFaviconEmoji !== false) {
-        renderFaviconEmoji(rule.customEmoji, rule.color);
+        renderFaviconEmoji(rule.customEmoji, rule.color, withHalo);
       } else {
         removeFaviconEmoji();
+        if (withHalo) applyFaviconHalo(true);
       }
     } else {
       removeTitleEmoji();
       removeFaviconEmoji();
+      if (withHalo) applyFaviconHalo(true);
     }
   }
 
@@ -620,7 +706,7 @@ initExtension();
   try {
     browser.runtime.sendMessage({ action: 'MATCH_URL', url: window.location.href }).then((response) => {
       if (response && response.matched && response.rule) {
-        applyRuleVisuals(response.rule);
+        applyRuleVisuals(response.rule, response.enableFaviconContrastHalo);
       }
     }).catch(() => {});
   } catch (e) {}
@@ -633,6 +719,7 @@ initExtension();
       } else {
         removeTopBar();
       }
+      const withHalo = msg.enableFaviconHalo !== false;
       if (msg.customEmoji) {
         if (msg.enableTitleEmoji !== false) {
           updateTitleEmoji(msg.customEmoji);
@@ -640,18 +727,21 @@ initExtension();
           removeTitleEmoji();
         }
         if (msg.enableFaviconEmoji !== false) {
-          renderFaviconEmoji(msg.customEmoji, msg.color);
+          renderFaviconEmoji(msg.customEmoji, msg.color, withHalo);
         } else {
           removeFaviconEmoji();
+          if (withHalo) applyFaviconHalo(true);
         }
       } else {
         removeTitleEmoji();
         removeFaviconEmoji();
+        if (withHalo) applyFaviconHalo(true);
       }
     } else if (msg.action === 'CLEAR_ACCENT_COLOR') {
       removeTopBar();
       removeTitleEmoji();
       removeFaviconEmoji();
+      applyFaviconHalo(false);
     }
   });
 })();
@@ -669,6 +759,7 @@ initExtension();
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="icons/icon-48.svg">
   <title>TabChroma</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -827,6 +918,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 <html lang="de">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="icons/icon-48.svg">
   <title>TabChroma - Firefox URL Tab Color & Container Studio</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -864,6 +956,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     .check-label input { margin-top: 2px; }
     .check-label strong { color: #f8fafc; display: block; }
     .check-label span { font-size: 11px; color: #94a3b8; }
+
+    .matcher-sample-chip { background: #1e293b; color: #94a3b8; border: 1px solid #334155; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-family: monospace; cursor: pointer; transition: all 0.15s ease; }
+    .matcher-sample-chip:hover { background: #334155; color: #38bdf8; border-color: #38bdf8; }
     
     .tip-banner { background: #0c4a6e; border: 1px solid #0284c7; border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #bae6fd; display: flex; align-items: center; gap: 8px; margin-top: 14px; }
     
@@ -1032,6 +1127,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             <button type="button" class="btn btn-secondary op-preset-btn" data-val="1.00" style="font-size:10px; padding:3px 6px;">100%</button>
           </div>
         </div>
+
+        <!-- Halo-Kontur Schalter & Live-Vorschau -->
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #283548; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <label class="check-label" style="margin-bottom: 0; cursor: pointer; flex: 1; min-width: 260px;">
+            <input type="checkbox" id="def-favicon-halo" checked>
+            <div>
+              <strong style="color: #f8fafc; display: flex; align-items: center; gap: 6px;">
+                <span>✨ Automatischer Favicon-Kontrast-Schutz (Halo-Kontur)</span>
+                <span id="badge-halo-status" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 600;">Aktiv</span>
+              </strong>
+              <span style="color: #94a3b8; font-size: 11px; line-height: 1.4; display: block; margin-top: 2px;">
+                Legt einen subtilen Licht-/Schatten-Schutzrand um Website-Favicons, damit Konturen auch bei identischer Farbe wie der Tab messerscharf bleiben.
+              </span>
+            </div>
+          </label>
+          <div style="background: #0b1120; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 8px;">
+            <span style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700;">Halo-Vorschau:</span>
+            <div id="halo-preview-pill" style="display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 4px; background: rgba(255, 79, 94, 0.35); border-top: 2px solid #ff4f5e;">
+              <span id="demo-halo-icon" style="font-size: 14px; filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));">🔴</span>
+              <span style="font-size: 11px; color: #fff; font-weight: 600;">Rot auf Rot</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -1045,10 +1163,95 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
     </div>
 
-    <!-- URL Rules Table -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <!-- 5. Live URL Match Evaluator (Echtzeit-URL-Tester) -->
+    <div class="card" id="card-url-matcher" style="margin-bottom: 20px; border-color: #0284c7; background: #0b1329;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+        <div>
+          <div style="font-size:14px; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:8px;">
+            <span>🔍 Live URL Match Evaluator &amp; Tester</span>
+            <span style="font-size:10px; background:rgba(56,189,248,0.2); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:1px 6px; border-radius:4px;">Echtzeit</span>
+          </div>
+          <div style="font-size:11px; color:#94a3b8; margin-top:3px;">
+            Testen Sie beliebige URLs in Echtzeit, um sofort zu sehen, welche Farbregel mit welcher Priorität greift und welcher Container geöffnet wird.
+          </div>
+        </div>
+        <button type="button" id="btn-matcher-current-tab" class="btn btn-secondary" style="font-size:11px; padding:5px 10px;" title="Übernimmt die URL des aktuell in Firefox geöffneten Tabs">
+          🌐 Aktuelle Tab-URL testen
+        </button>
+      </div>
+
+      <!-- Quick sample chips -->
+      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:10px; font-size:11px;">
+        <span style="color:#64748b; font-size:11px;">Beispiel-URLs:</span>
+        <button type="button" class="matcher-sample-chip" data-url="https://app.staging.example.com/api/v1/health">app.staging.example.com</button>
+        <button type="button" class="matcher-sample-chip" data-url="https://248924.4.internal-cloud.net/app">internal-cloud.net</button>
+        <button type="button" class="matcher-sample-chip" data-url="https://github.com/mozilla/gecko-dev">github.com</button>
+        <button type="button" class="matcher-sample-chip" data-url="http://localhost:3000/dashboard">localhost:3000</button>
+        <button type="button" class="matcher-sample-chip" data-url="https://api.prod.company.net/v2/orders">api.prod.company.net</button>
+      </div>
+
+      <!-- URL Input -->
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input 
+          type="text" 
+          id="matcher-url-input" 
+          class="form-input" 
+          style="font-family:monospace; font-size:12px; background:#0f172a;" 
+          placeholder="URL eingeben oder einfügen (z. B. https://staging.example.com oder localhost:8080)..."
+          value="https://app.staging.example.com/api/v1/health"
+        >
+        <button type="button" id="btn-matcher-eval" class="btn btn-primary" style="padding:6px 14px; font-size:11px; white-space:nowrap;">Prüfen</button>
+      </div>
+
+      <!-- Result Container -->
+      <div id="matcher-result-box" style="padding:12px; border-radius:8px; background:#111c35; border:1px solid #1e293b;">
+        <!-- Dynamic Result rendered by options.js -->
+      </div>
+    </div>
+
+    <!-- URL Rules Table & Search/Filter Header -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
       <h2 style="font-size:16px; font-weight:700; color:#f8fafc;" id="table-heading">Konfigurierte URL-Regeln</h2>
       <span id="rules-count-pill" style="font-size:11px; background:#1e293b; color:#38bdf8; padding:3px 8px; border-radius:12px; border:1px solid #334155;">0 Regeln</span>
+    </div>
+
+    <!-- Such- und Filterleiste für Regeln (nach Regelname, Container-Name oder Pattern) -->
+    <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+      <div style="position: relative; flex: 1; min-width: 280px;">
+        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 13px; color: #64748b; pointer-events: none;">🔍</span>
+        <input 
+          type="text" 
+          id="rules-filter-input" 
+          placeholder="Regeln filtern nach Name, Container oder URL-Pattern..." 
+          style="width: 100%; padding: 7px 32px 7px 32px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; font-size: 12px; color: #f8fafc; outline: none;"
+        >
+        <button 
+          type="button" 
+          id="btn-rules-filter-clear" 
+          style="display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #94a3b8; font-size: 14px; cursor: pointer; padding: 2px 6px;"
+          title="Filter zurücksetzen"
+        >✕</button>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+        <span id="filter-result-badge" style="font-size: 11px; color: #94a3b8; background: #1e293b; padding: 5px 10px; border-radius: 6px; border: 1px solid #334155; white-space: nowrap;">
+          Alle Regeln angezeigt
+        </span>
+
+        <!-- Filter auf nur ausgewählte Regeln umschalten -->
+        <button type="button" id="btn-filter-only-selected" class="btn btn-secondary" style="font-size: 11px; padding: 6px 10px; cursor: pointer; transition: all 0.15s;" title="Filtert die Tabelle, sodass nur die aktuell ausgewählten Regeln angezeigt werden">
+          ⭐ Nur Ausgewählte anzeigen (<span id="only-selected-count">0</span>)
+        </button>
+
+        <!-- Treffer zur Auswahl hinzufügen (selektiv vergrößern) -->
+        <button type="button" id="btn-add-filtered-to-selection" class="btn btn-secondary" style="font-size: 11px; padding: 6px 10px; display: none; background: #064e3b; border-color: #059669; color: #6ee7b7;" title="Fügt die aktuellen Suchtreffer zur bestehenden Auswahl hinzu (Auswahl schrittweise erweitern)">
+          ➕ Zu Auswahl hinzufügen (<span id="add-filtered-count">0</span>)
+        </button>
+
+        <!-- Nur diese Treffer auswählen -->
+        <button type="button" id="btn-select-filtered" class="btn btn-secondary" style="font-size: 11px; padding: 6px 10px; display: none; background: #0c4a6e; border-color: #0284c7; color: #38bdf8;" title="Wählt ausschließlich die aktuellen Treffer aus und deselektiert alle anderen">
+          ☑️ Nur diese Treffer
+        </button>
+      </div>
     </div>
 
     <!-- Massenbearbeitung & Bulk Action Toolbar (Immer sichtbar & direkt erreichbar) -->
@@ -1062,7 +1265,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           <span id="bulk-stats-text" style="font-size: 11px; color: #94a3b8; border-left: 1px solid #334155; padding-left: 10px;">0 aktiv · 0 inaktiv</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" id="btn-bulk-restrict-to-filter" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px; display: none; background: #0c4a6e; border-color: #0284c7; color: #38bdf8;" title="Entfernt alle nicht sichtbaren Regeln aus der Auswahl und behält nur die Filter-Treffer">🎯 Nur Treffer auswählen</button>
+          <button type="button" id="btn-bulk-filter-selected" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px; display: none; background: #854d0e; border-color: #ca8a04; color: #fef08a;" title="Tabelle so filtern, dass nur diese ausgewählten Regeln angezeigt werden">⭐ Auf Ausgewählte filtern</button>
           <button type="button" id="btn-bulk-select-all" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">☑️ Alle auswählen</button>
+          <button type="button" id="btn-bulk-select-all-global" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px; display: none;" title="Wählt ausnahmslos alle Regeln in Firefox aus, auch jene außerhalb des aktuellen Suchfilters">🌐 Alle Regeln (global)</button>
           <button type="button" id="btn-bulk-clear" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">✕ Auswahl aufheben</button>
         </div>
       </div>
@@ -1229,6 +1435,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div>
               <strong>Symbol im Tab-Titel voranstellen</strong>
               <span>Setzt das Symbol vor den Tab-Titel (z. B. 🚀 Dashboard).</span>
+            </div>
+          </label>
+          <label class="check-label" style="margin-bottom:0;">
+            <input type="checkbox" id="inp-enable-favicon-halo" checked>
+            <div>
+              <strong>✨ Favicon-Kontrast-Schutz (Halo-Kontur) für diese Regel</strong>
+              <span>Subtiler Licht-/Schatten-Schutzrand um das Favicon, verhindert Verschwimmen bei gleicher Tab-Farbe.</span>
             </div>
           </label>
         </div>
@@ -1491,12 +1704,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
 
       <!-- Option 6: 3px Akzentleiste -->
-      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548; margin-bottom:0;">
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548; margin-bottom:10px;">
         <label class="form-label" style="font-size:11px; font-weight:700; color:#38bdf8; margin-bottom:6px;">6. 3px Seiten-Akzentleiste:</label>
         <select id="be-topbar" class="form-select">
           <option value="keep">-- Keine Änderung (beibehalten) --</option>
           <option value="enable">Akzentleiste aktivieren (ein)</option>
           <option value="disable">Akzentleiste deaktivieren (aus)</option>
+        </select>
+      </div>
+
+      <!-- Option 7: Favicon-Kontrast-Schutz (Halo-Kontur) -->
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548; margin-bottom:0;">
+        <label class="form-label" style="font-size:11px; font-weight:700; color:#38bdf8; margin-bottom:6px;">7. Favicon-Kontrast-Schutz (Halo-Kontur):</label>
+        <select id="be-halo" class="form-select">
+          <option value="keep">-- Keine Änderung (beibehalten) --</option>
+          <option value="enable">Halo-Kontur aktivieren (Schutzrand an)</option>
+          <option value="disable">Halo-Kontur deaktivieren (aus)</option>
         </select>
       </div>
 
@@ -1566,8 +1789,12 @@ async function loadConfig() {
   if (!appConfig.defaultColor) appConfig.defaultColor = DEFAULT_CONFIG.defaultColor || '#37adff';
   if (!appConfig.defaultContainerColor) appConfig.defaultContainerColor = DEFAULT_CONFIG.defaultContainerColor || 'blue';
   if (!appConfig.defaultMode) appConfig.defaultMode = DEFAULT_CONFIG.defaultMode || 'container';
+  if (appConfig.enableFaviconContrastHalo === undefined) {
+    appConfig.enableFaviconContrastHalo = DEFAULT_CONFIG.enableFaviconContrastHalo !== false;
+  }
 
   renderDefaultsCard();
+  initLiveUrlMatcher();
   renderRules();
   initBulkToolbar();
 }
@@ -1584,6 +1811,22 @@ async function saveConfigToStorage() {
 // -------------------------------------------------------------
 // Defaults Card (Standard-Einstellungen & Farbschema)
 // -------------------------------------------------------------
+function updateHaloPreview(isHalo) {
+  const icon = document.getElementById('demo-halo-icon');
+  const badge = document.getElementById('badge-halo-status');
+  if (icon) {
+    icon.style.filter = isHalo
+      ? 'drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85))'
+      : 'none';
+  }
+  if (badge) {
+    badge.textContent = isHalo ? 'Aktiv' : 'Deaktiviert';
+    badge.style.color = isHalo ? '#38bdf8' : '#94a3b8';
+    badge.style.borderColor = isHalo ? 'rgba(56, 189, 248, 0.4)' : '#334155';
+    badge.style.background = isHalo ? 'rgba(56, 189, 248, 0.2)' : 'rgba(100, 116, 139, 0.2)';
+  }
+}
+
 function renderDefaultsCard() {
   const defHex = document.getElementById('def-hex');
   const defPicker = document.getElementById('def-picker');
@@ -1623,6 +1866,11 @@ function renderDefaultsCard() {
   const opacityVal = (typeof appConfig.activeTabOpacity === 'number') ? appConfig.activeTabOpacity : 0.35;
   if (defOpacity) defOpacity.value = String(opacityVal);
   if (lblOpacityVal) lblOpacityVal.textContent = Math.round(opacityVal * 100) + '%';
+
+  const defHalo = document.getElementById('def-favicon-halo');
+  const isHalo = appConfig.enableFaviconContrastHalo !== false;
+  if (defHalo) defHalo.checked = isHalo;
+  updateHaloPreview(isHalo);
 }
 
 // Defaults listeners
@@ -1641,6 +1889,11 @@ document.getElementById('def-opacity')?.addEventListener('input', (e) => {
   appConfig.activeTabOpacity = val;
   const lbl = document.getElementById('lbl-opacity-val');
   if (lbl) lbl.textContent = Math.round(val * 100) + '%';
+});
+
+document.getElementById('def-favicon-halo')?.addEventListener('change', (e) => {
+  appConfig.enableFaviconContrastHalo = e.target.checked;
+  updateHaloPreview(e.target.checked);
 });
 
 document.querySelectorAll('.op-preset-btn').forEach((btn) => {
@@ -1693,6 +1946,8 @@ document.getElementById('btn-save-defaults')?.addEventListener('click', async ()
   if (defEnableTopbar) appConfig.enablePageTopBar = defEnableTopbar.checked;
   const defOpacity = document.getElementById('def-opacity');
   if (defOpacity) appConfig.activeTabOpacity = parseFloat(defOpacity.value);
+  const defHalo = document.getElementById('def-favicon-halo');
+  if (defHalo) appConfig.enableFaviconContrastHalo = defHalo.checked;
 
   await saveConfigToStorage();
 
@@ -1708,39 +1963,412 @@ document.getElementById('btn-reset-defaults')?.addEventListener('click', async (
     appConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     await saveConfigToStorage();
     renderDefaultsCard();
+    initLiveUrlMatcher();
     renderRules();
   }
 });
 
 // -------------------------------------------------------------
-// Rules Table & Bulk Actions
+// Live URL Match Evaluator & Tester
+// -------------------------------------------------------------
+function testRuleMatchDetailed(url, rule) {
+  if (!rule.enabled) return { matched: false, reason: 'Regel ist deaktiviert' };
+  if (!url || typeof url !== 'string') return { matched: false, reason: 'Keine URL angegeben' };
+
+  const cleanUrl = url.trim();
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://') ? cleanUrl : ('https://' + cleanUrl));
+  } catch (e) {}
+
+  switch (rule.patternType) {
+    case 'wildcard': {
+      try {
+        const regex = wildcardToRegExp(rule.pattern);
+        if (regex.test(cleanUrl)) return { matched: true, reason: 'Entspricht Wildcard-Muster: ' + rule.pattern };
+        if (parsedUrl && regex.test(cleanUrl.replace(/^https?:\\/\\//i, ''))) {
+          return { matched: true, reason: 'Entspricht Wildcard (ohne Protokoll): ' + rule.pattern };
+        }
+      } catch (err) {
+        return { matched: false, reason: 'Wildcard-Fehler: ' + err.message };
+      }
+      return { matched: false };
+    }
+    case 'domain': {
+      const targetDomain = rule.pattern.toLowerCase().replace(/^(https?:\\/\\/)?(www\\.)?/, '').replace(/\\/.*$/, '');
+      if (parsedUrl) {
+        const host = parsedUrl.hostname.toLowerCase();
+        if (host === targetDomain) {
+          return { matched: true, reason: 'Host ' + host + ' entspricht exakt der Domain ' + targetDomain };
+        }
+        if (host.endsWith('.' + targetDomain)) {
+          return { matched: true, reason: 'Host ' + host + ' ist eine Subdomain von ' + targetDomain };
+        }
+      }
+      if (!parsedUrl && cleanUrl.toLowerCase().replace(/^(https?:\\/\\/)?(www\\.)?/, '').startsWith(targetDomain)) {
+        return { matched: true, reason: 'Host beginnt mit Domain ' + targetDomain };
+      }
+      return { matched: false };
+    }
+    case 'exact_host': {
+      const targetHost = rule.pattern.toLowerCase().replace(/^(https?:\\/\\/)?(www\\.)?/, '').replace(/\\/.*$/, '');
+      if (parsedUrl) {
+        const host = parsedUrl.hostname.toLowerCase();
+        if (host === targetHost) {
+          return { matched: true, reason: 'Host ' + host + ' stimmt exakt überein (Subdomains isoliert)' };
+        }
+      } else {
+        const rawHost = cleanUrl.replace(/^(https?:\\/\\/)?(www\\.)?/, '').replace(/\\/.*$/, '').toLowerCase();
+        if (rawHost === targetHost) {
+          return { matched: true, reason: 'Exakter Host-Treffer: ' + targetHost };
+        }
+      }
+      return { matched: false };
+    }
+    case 'prefix': {
+      const targetPrefix = rule.pattern.toLowerCase();
+      if (cleanUrl.toLowerCase().startsWith(targetPrefix)) {
+        return { matched: true, reason: 'URL beginnt mit Präfix: ' + rule.pattern };
+      }
+      if (parsedUrl && cleanUrl.replace(/^https?:\\/\\//i, '').toLowerCase().startsWith(targetPrefix.replace(/^https?:\\/\\//i, ''))) {
+        return { matched: true, reason: 'URL (protokoll-unabhängig) beginnt mit Präfix: ' + rule.pattern };
+      }
+      return { matched: false };
+    }
+    case 'exact': {
+      const normTarget = rule.pattern.replace(/\\/+$/, '').toLowerCase();
+      const normUrl = cleanUrl.replace(/\\/+$/, '').toLowerCase();
+      if (normTarget === normUrl) {
+        return { matched: true, reason: 'Exakte URL-Übereinstimmung' };
+      }
+      return { matched: false };
+    }
+    case 'regex': {
+      try {
+        const re = new RegExp(rule.pattern, 'i');
+        if (re.test(cleanUrl)) {
+          return { matched: true, reason: 'Entspricht regulärem Ausdruck: /' + rule.pattern + '/i' };
+        }
+      } catch (err) {
+        return { matched: false, reason: 'RegEx-Fehler: ' + err.message };
+      }
+      return { matched: false };
+    }
+    default:
+      return { matched: false };
+  }
+}
+
+function evaluateUrlMatcher(url) {
+  const box = document.getElementById('matcher-result-box');
+  if (!box) return;
+
+  if (!url || !url.trim()) {
+    box.innerHTML = '<div style="font-size:11px; color:#94a3b8;">Geben Sie eine URL oben ein oder klicken Sie auf eine der Beispiel-URLs.</div>';
+    return;
+  }
+
+  const cleanUrl = url.trim();
+  const sorted = [...(appConfig.rules || [])].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+  let matchedRule = null;
+  let matchReason = '';
+
+  for (const rule of sorted) {
+    if (!rule.enabled) continue;
+    const res = testRuleMatchDetailed(cleanUrl, rule);
+    if (res.matched) {
+      matchedRule = rule;
+      matchReason = res.reason;
+      break;
+    }
+  }
+
+  if (!matchedRule) {
+    const fallbackColor = appConfig.defaultColor || '#37adff';
+    const fallbackContainer = appConfig.defaultContainerColor || 'blue';
+    box.innerHTML = [
+      '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">',
+      '  <div style="display:flex; align-items:center; gap:10px;">',
+      '    <div style="width:6px; height:36px; border-radius:3px; background:' + fallbackColor + ';"></div>',
+      '    <div>',
+      '      <div style="font-size:12px; font-weight:700; color:#f87171; display:flex; align-items:center; gap:6px;">',
+      '        <span>⚠️ Keine Regel trifft zu</span>',
+      '        <span style="font-size:10px; background:#334155; color:#cbd5e1; padding:1px 6px; border-radius:4px;">Standard-Fallback</span>',
+      '      </div>',
+      '      <div style="font-size:11px; color:#94a3b8; margin-top:2px;">',
+      '        ' + escapeHtml(matchReason || 'Kein Muster passte auf die URL.') + ' Tab öffnet im Standard-Container: <strong>' + escapeHtml(fallbackContainer) + '</strong> (' + escapeHtml(fallbackColor) + ')',
+      '      </div>',
+      '    </div>',
+      '  </div>',
+      '  <button type="button" id="btn-matcher-create-rule" class="btn btn-primary" style="font-size:11px; padding:5px 10px;">',
+      '    ➕ Neue Regel für diese URL anlegen',
+      '  </button>',
+      '</div>'
+    ].join('\\n');
+    document.getElementById('btn-matcher-create-rule')?.addEventListener('click', () => {
+      let host = cleanUrl;
+      try {
+        const parsed = new URL(cleanUrl.startsWith('http') ? cleanUrl : 'https://' + cleanUrl);
+        host = parsed.hostname;
+      } catch (e) {}
+      openRuleModal(-1);
+      const inpPattern = document.getElementById('inp-pattern');
+      const inpName = document.getElementById('inp-name');
+      const inpType = document.getElementById('inp-type');
+      if (inpPattern) inpPattern.value = host;
+      if (inpName) inpName.value = host;
+      if (inpType) inpType.value = 'domain';
+      updateModalPreview();
+    });
+    return;
+  }
+
+  const hex = matchedRule.color || hexMap[matchedRule.firefoxContainerColor] || '#37adff';
+  const emoji = matchedRule.customEmoji || '';
+  const containerName = matchedRule.containerName || matchedRule.name || 'Container';
+  const prio = matchedRule.priority || 1;
+
+  box.innerHTML = [
+    '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">',
+    '  <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:280px;">',
+    '    <div style="width:6px; height:42px; border-radius:3px; background:' + hex + '; box-shadow:0 0 8px ' + hex + '66;"></div>',
+    '    <div>',
+    '      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">',
+    '        <span style="font-size:12px; font-weight:700; color:#34d399;">✓ Regel #' + prio + ' trifft zu:</span>',
+    '        <strong style="font-size:13px; color:#f8fafc;">' + escapeHtml(matchedRule.name) + '</strong>',
+    emoji ? ('<span style="font-size:13px;">' + escapeHtml(emoji) + '</span>') : '',
+    '        <span style="font-size:10px; font-family:monospace; background:#1e293b; color:#38bdf8; border:1px solid #334155; padding:1px 6px; border-radius:4px;">' + escapeHtml(matchedRule.patternType) + '</span>',
+    '        <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; color:#fff; background:' + hex + ';">' + escapeHtml(matchedRule.firefoxContainerColor || 'blue') + '</span>',
+    '      </div>',
+    '      <div style="font-size:11px; color:#94a3b8; margin-top:3px;">',
+    '        ' + escapeHtml(matchReason || '') + ' &bull; Container: <strong style="color:#e2e8f0;">' + escapeHtml(containerName) + '</strong>',
+    '      </div>',
+    '    </div>',
+    '  </div>',
+    '  <div style="display:flex; align-items:center; gap:8px;">',
+    '    <div style="background:#1e1e2e; padding:4px 8px 0 8px; border-radius:5px 5px 0 0; display:inline-flex;">',
+    '      <div style="background:#2d2d3f; border-top:3px solid ' + hex + '; border-radius:5px 5px 0 0; padding:4px 8px; display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:#fff;">',
+    '        <span>' + (emoji || '🌐') + '</span>',
+    '        <span style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(matchedRule.name) + '</span>',
+    '        <span style="background:' + hex + '33; border:1px solid ' + hex + '; color:' + hex + '; font-size:9px; padding:0 4px; border-radius:8px;">' + escapeHtml(containerName) + '</span>',
+    '      </div>',
+    '    </div>',
+    '    <button type="button" id="btn-matcher-edit-rule" class="btn btn-secondary" style="font-size:11px; padding:5px 10px;">',
+    '      ✏️ Regel bearbeiten',
+    '    </button>',
+    '  </div>',
+    '</div>'
+  ].join('\\n');
+
+  document.getElementById('btn-matcher-edit-rule')?.addEventListener('click', () => {
+    const idx = (appConfig.rules || []).findIndex(r => r.id === matchedRule.id);
+    if (idx !== -1) {
+      openRuleModal(idx);
+    }
+  });
+}
+
+function initLiveUrlMatcher() {
+  const matcherInp = document.getElementById('matcher-url-input');
+  if (matcherInp) {
+    matcherInp.addEventListener('input', (e) => evaluateUrlMatcher(e.target.value));
+    evaluateUrlMatcher(matcherInp.value);
+  }
+  document.getElementById('btn-matcher-eval')?.addEventListener('click', () => {
+    if (matcherInp) evaluateUrlMatcher(matcherInp.value);
+  });
+  document.querySelectorAll('.matcher-sample-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const u = chip.getAttribute('data-url');
+      if (matcherInp && u) {
+        matcherInp.value = u;
+        evaluateUrlMatcher(u);
+      }
+    });
+  });
+  document.getElementById('btn-matcher-current-tab')?.addEventListener('click', async () => {
+    try {
+      const allTabs = await browser.tabs.query({ active: true });
+      const normalTab = allTabs.find(t => t.url && !t.url.startsWith('moz-extension:')) || allTabs[0];
+      if (normalTab && normalTab.url && matcherInp) {
+        matcherInp.value = normalTab.url;
+        evaluateUrlMatcher(normalTab.url);
+      }
+    } catch (e) {}
+  });
+}
+
+// -------------------------------------------------------------
+// Rules Table, Filter/Search & Bulk Actions
 // -------------------------------------------------------------
 const selectedRuleIds = new Set();
+let rulesFilterQuery = '';
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+let showOnlySelectedMode = false;
+
+function getFilteredRules() {
+  let list = appConfig.rules || [];
+  if (showOnlySelectedMode) {
+    list = list.filter((r) => selectedRuleIds.has(r.id));
+  }
+  const query = rulesFilterQuery.toLowerCase().trim();
+  if (!query) return list;
+  return list.filter((r) => {
+    const name = (r.name || '').toLowerCase();
+    const container = (r.containerName || '').toLowerCase();
+    const pattern = (r.pattern || '').toLowerCase();
+    const color = (r.firefoxContainerColor || '').toLowerCase();
+    const type = (r.patternType || '').toLowerCase();
+    return name.includes(query) || container.includes(query) || pattern.includes(query) || color.includes(query) || type.includes(query);
+  });
+}
+
+function getEffectiveBulkTargetRules() {
+  const visible = getFilteredRules();
+  const isFiltered = !!rulesFilterQuery.trim() || showOnlySelectedMode;
+  if (selectedRuleIds.size > 0) {
+    return (appConfig.rules || []).filter((r) => selectedRuleIds.has(r.id));
+  }
+  return isFiltered ? visible : (appConfig.rules || []);
+}
 
 function renderRules() {
   const tbody = document.getElementById('rules-body');
   const countPill = document.getElementById('rules-count-pill');
+  const filterBadge = document.getElementById('filter-result-badge');
+  const btnSelectFiltered = document.getElementById('btn-select-filtered');
+  const btnAddFiltered = document.getElementById('btn-add-filtered-to-selection');
+  const btnOnlySelected = document.getElementById('btn-filter-only-selected');
+  const btnClearFilter = document.getElementById('btn-rules-filter-clear');
   if (!tbody) return;
 
   tbody.textContent = '';
-  const rules = appConfig.rules || [];
-  if (countPill) countPill.textContent = rules.length + ' Regeln';
+  const allRules = appConfig.rules || [];
+  const visibleRules = getFilteredRules();
+  const isFiltered = !!rulesFilterQuery.trim() || showOnlySelectedMode;
 
-  if (rules.length === 0) {
+  if (countPill) {
+    if (showOnlySelectedMode && rulesFilterQuery.trim()) {
+      countPill.textContent = visibleRules.length + ' von ' + selectedRuleIds.size + ' ausgewählten (gefiltert)';
+    } else if (showOnlySelectedMode) {
+      countPill.textContent = visibleRules.length + ' von ' + selectedRuleIds.size + ' ausgewählten Regeln';
+    } else if (isFiltered) {
+      countPill.textContent = visibleRules.length + ' von ' + allRules.length + ' Regeln';
+    } else {
+      countPill.textContent = allRules.length + ' Regeln';
+    }
+  }
+
+  if (filterBadge) {
+    if (showOnlySelectedMode && rulesFilterQuery.trim()) {
+      filterBadge.textContent = visibleRules.length + ' Treffer in ' + selectedRuleIds.size + ' Ausgewählten';
+      filterBadge.style.color = '#38bdf8';
+      filterBadge.style.borderColor = '#0284c7';
+    } else if (showOnlySelectedMode) {
+      filterBadge.textContent = '⭐ Filter: ' + visibleRules.length + ' Ausgewählte aktiv';
+      filterBadge.style.color = '#fef08a';
+      filterBadge.style.borderColor = '#eab308';
+    } else if (isFiltered) {
+      filterBadge.textContent = visibleRules.length + ' von ' + allRules.length + ' Treffern';
+      filterBadge.style.color = '#38bdf8';
+      filterBadge.style.borderColor = '#0284c7';
+    } else {
+      filterBadge.textContent = 'Alle ' + allRules.length + ' Regeln';
+      filterBadge.style.color = '#94a3b8';
+      filterBadge.style.borderColor = '#334155';
+    }
+  }
+
+  // Button: Nur Ausgewählte anzeigen
+  if (btnOnlySelected) {
+    if (showOnlySelectedMode) {
+      btnOnlySelected.style.background = '#0284c7';
+      btnOnlySelected.style.borderColor = '#38bdf8';
+      btnOnlySelected.style.color = '#ffffff';
+      btnOnlySelected.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.4)';
+      btnOnlySelected.innerHTML = '✓ Nur Ausgewählte (' + selectedRuleIds.size + ') <span style="font-size:10px; opacity:0.8; margin-left:4px;">[Alle zeigen]</span>';
+    } else {
+      btnOnlySelected.style.background = '#1e293b';
+      btnOnlySelected.style.borderColor = '#334155';
+      btnOnlySelected.style.color = selectedRuleIds.size > 0 ? '#fef08a' : '#cbd5e1';
+      btnOnlySelected.style.boxShadow = 'none';
+      btnOnlySelected.innerHTML = '⭐ Nur Ausgewählte anzeigen (<span id="only-selected-count">' + selectedRuleIds.size + '</span>)';
+    }
+  }
+
+  // Button: Treffer zur Auswahl hinzufügen (kumulativ)
+  if (btnAddFiltered) {
+    const isSearchActive = !!rulesFilterQuery.trim();
+    btnAddFiltered.style.display = (isSearchActive && visibleRules.length > 0) ? 'inline-block' : 'none';
+    const allVisibleAlreadySelected = visibleRules.length > 0 && visibleRules.every((r) => selectedRuleIds.has(r.id));
+    const unselectedCount = visibleRules.filter((r) => !selectedRuleIds.has(r.id)).length;
+    if (allVisibleAlreadySelected) {
+      btnAddFiltered.textContent = '✓ Alle ' + visibleRules.length + ' Treffer in Auswahl';
+      btnAddFiltered.style.opacity = '0.7';
+    } else {
+      btnAddFiltered.textContent = '➕ +' + unselectedCount + ' Treffer zur Auswahl hinzufügen';
+      btnAddFiltered.style.opacity = '1';
+    }
+  }
+
+  // Button: Nur diese Treffer auswählen (exklusiv)
+  if (btnSelectFiltered) {
+    const isSearchActive = !!rulesFilterQuery.trim();
+    btnSelectFiltered.style.display = (isSearchActive && visibleRules.length > 0) ? 'inline-block' : 'none';
+    btnSelectFiltered.textContent = '☑️ Nur diese ' + visibleRules.length + ' Treffer';
+  }
+
+  if (btnClearFilter) {
+    btnClearFilter.style.display = rulesFilterQuery.trim() ? 'inline' : 'none';
+  }
+
+  if (visibleRules.length === 0) {
     const emptyTr = document.createElement('tr');
     const emptyTd = document.createElement('td');
     emptyTd.colSpan = 9;
     emptyTd.style.textAlign = 'center';
     emptyTd.style.padding = '36px';
     emptyTd.style.color = '#64748b';
-    emptyTd.textContent = 'Keine Regeln konfiguriert. Klicken Sie auf "+ Neue Regel erstellen", um eine hinzuzufügen.';
+    if (showOnlySelectedMode) {
+      emptyTd.innerHTML = 'Aktuell sind keine Regeln als ausgewählt markiert.<br><button type="button" id="btn-empty-clear-selected-filter" class="btn btn-primary" style="margin-top:10px; font-size:11px;">Alle ' + allRules.length + ' Regeln anzeigen</button>';
+      setTimeout(() => {
+        document.getElementById('btn-empty-clear-selected-filter')?.addEventListener('click', () => {
+          showOnlySelectedMode = false;
+          renderRules();
+          updateBulkToolbar();
+        });
+      }, 0);
+    } else if (isFiltered) {
+      emptyTd.innerHTML = 'Keine Regeln passend zu <strong>"' + escapeHtml(rulesFilterQuery) + '"</strong> gefunden.<br><button type="button" id="btn-empty-clear-filter" class="btn btn-secondary" style="margin-top:10px; font-size:11px;">Filter zurücksetzen</button>';
+      setTimeout(() => {
+        document.getElementById('btn-empty-clear-filter')?.addEventListener('click', () => {
+          const inp = document.getElementById('rules-filter-input');
+          if (inp) inp.value = '';
+          rulesFilterQuery = '';
+          renderRules();
+        });
+      }, 0);
+    } else {
+      emptyTd.textContent = 'Keine Regeln konfiguriert. Klicken Sie auf "+ Neue Regel erstellen", um eine hinzuzufügen.';
+    }
     emptyTr.appendChild(emptyTd);
     tbody.appendChild(emptyTr);
     updateBulkToolbar();
     return;
   }
 
-  rules.forEach((rule, idx) => {
+  visibleRules.forEach((rule, visibleIdx) => {
+    const globalIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
     const tr = document.createElement('tr');
     const isSelected = selectedRuleIds.has(rule.id);
     if (isSelected) {
@@ -1777,37 +2405,43 @@ function renderRules() {
     pNum.style.fontFamily = 'monospace';
     pNum.style.color = '#94a3b8';
     pNum.style.marginRight = '4px';
-    pNum.textContent = String(idx + 1);
+    pNum.textContent = String(rule.priority || (globalIdx + 1));
     pContainer.appendChild(pNum);
 
-    if (idx > 0) {
+    if (globalIdx > 0) {
       const upBtn = document.createElement('button');
       upBtn.className = 'priority-btn';
       upBtn.textContent = '▲';
       upBtn.title = 'Nach oben';
       upBtn.addEventListener('click', async () => {
-        const temp = appConfig.rules[idx];
-        appConfig.rules[idx] = appConfig.rules[idx - 1];
-        appConfig.rules[idx - 1] = temp;
-        appConfig.rules.forEach((r, i) => r.priority = i + 1);
-        await saveConfigToStorage();
-        renderRules();
+        const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+        if (curIdx > 0) {
+          const temp = appConfig.rules[curIdx];
+          appConfig.rules[curIdx] = appConfig.rules[curIdx - 1];
+          appConfig.rules[curIdx - 1] = temp;
+          appConfig.rules.forEach((r, i) => r.priority = i + 1);
+          await saveConfigToStorage();
+          renderRules();
+        }
       });
       pContainer.appendChild(upBtn);
     }
 
-    if (idx < rules.length - 1) {
+    if (globalIdx !== -1 && globalIdx < (appConfig.rules?.length || 0) - 1) {
       const downBtn = document.createElement('button');
       downBtn.className = 'priority-btn';
       downBtn.textContent = '▼';
       downBtn.title = 'Nach unten';
       downBtn.addEventListener('click', async () => {
-        const temp = appConfig.rules[idx];
-        appConfig.rules[idx] = appConfig.rules[idx + 1];
-        appConfig.rules[idx + 1] = temp;
-        appConfig.rules.forEach((r, i) => r.priority = i + 1);
-        await saveConfigToStorage();
-        renderRules();
+        const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+        if (curIdx !== -1 && curIdx < (appConfig.rules?.length || 0) - 1) {
+          const temp = appConfig.rules[curIdx];
+          appConfig.rules[curIdx] = appConfig.rules[curIdx + 1];
+          appConfig.rules[curIdx + 1] = temp;
+          appConfig.rules.forEach((r, i) => r.priority = i + 1);
+          await saveConfigToStorage();
+          renderRules();
+        }
       });
       pContainer.appendChild(downBtn);
     }
@@ -1828,7 +2462,10 @@ function renderRules() {
     const tdName = document.createElement('td');
     tdName.style.fontWeight = '600';
     tdName.style.cursor = 'pointer';
-    tdName.addEventListener('click', () => openRuleModal(idx));
+    tdName.addEventListener('click', () => {
+      const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+      if (curIdx !== -1) openRuleModal(curIdx);
+    });
 
     if (rule.customEmoji) {
       const symSpan = document.createElement('span');
@@ -1871,7 +2508,7 @@ function renderRules() {
     tdPattern.appendChild(code);
 
     const dupIdx = (appConfig.rules || []).findIndex(
-      (r, rIdx) => rIdx < idx && r.patternType === rule.patternType && (r.pattern || '').trim().toLowerCase() === (rule.pattern || '').trim().toLowerCase()
+      (r, rIdx) => rIdx < globalIdx && r.patternType === rule.patternType && (r.pattern || '').trim().toLowerCase() === (rule.pattern || '').trim().toLowerCase()
     );
     if (dupIdx >= 0) {
       const warn = document.createElement('span');
@@ -1919,7 +2556,10 @@ function renderRules() {
     const editBtn = document.createElement('button');
     editBtn.className = 'edit-btn';
     editBtn.textContent = 'Bearbeiten';
-    editBtn.addEventListener('click', () => openRuleModal(idx));
+    editBtn.addEventListener('click', () => {
+      const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+      if (curIdx !== -1) openRuleModal(curIdx);
+    });
     tdAction.appendChild(editBtn);
 
     const dupBtn = document.createElement('button');
@@ -1943,11 +2583,14 @@ function renderRules() {
     delBtn.textContent = 'Löschen';
     delBtn.addEventListener('click', async () => {
       if (confirm('Regel "' + (rule.name || rule.pattern) + '" wirklich löschen?')) {
-        appConfig.rules.splice(idx, 1);
-        appConfig.rules.forEach((r, i) => r.priority = i + 1);
-        selectedRuleIds.delete(rule.id);
-        await saveConfigToStorage();
-        renderRules();
+        const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+        if (curIdx !== -1) {
+          appConfig.rules.splice(curIdx, 1);
+          appConfig.rules.forEach((r, i) => r.priority = i + 1);
+          selectedRuleIds.delete(rule.id);
+          await saveConfigToStorage();
+          renderRules();
+        }
       }
     });
     tdAction.appendChild(delBtn);
@@ -1968,16 +2611,24 @@ function updateBulkToolbar() {
   const masterChk = document.getElementById('chk-all-rules');
   const hint = document.getElementById('bulk-hint');
   const openModalBtn = document.getElementById('btn-open-bulk-edit');
+  const btnSelectAll = document.getElementById('btn-bulk-select-all');
+  const btnSelectAllGlobal = document.getElementById('btn-bulk-select-all-global');
+  const btnRestrictFiltered = document.getElementById('btn-bulk-restrict-to-filter');
   if (!card) return;
 
-  const count = selectedRuleIds.size;
-  const rules = appConfig.rules || [];
+  const allRules = appConfig.rules || [];
+  const visible = getFilteredRules();
+  const isFiltered = !!rulesFilterQuery.trim();
+
+  const visibleSelectedCount = visible.filter((r) => selectedRuleIds.has(r.id)).length;
+  const hiddenSelectedCount = selectedRuleIds.size - visibleSelectedCount;
+  const totalSelectedCount = selectedRuleIds.size;
 
   if (masterChk) {
-    if (rules.length === 0 || count === 0) {
+    if (visible.length === 0 || visibleSelectedCount === 0) {
       masterChk.checked = false;
       masterChk.indeterminate = false;
-    } else if (count === rules.length) {
+    } else if (visibleSelectedCount === visible.length) {
       masterChk.checked = true;
       masterChk.indeterminate = false;
     } else {
@@ -1986,28 +2637,88 @@ function updateBulkToolbar() {
     }
   }
 
-  if (countBadge) {
-    countBadge.textContent = count + ' von ' + rules.length + ' ' + (count === 1 ? 'Regel ausgewählt' : 'Regeln ausgewählt');
-    countBadge.style.background = count > 0 ? '#0284c7' : '#334155';
+  // Dynamic button labels
+  if (btnSelectAll) {
+    if (isFiltered) {
+      btnSelectAll.textContent = (visibleSelectedCount === visible.length && hiddenSelectedCount === 0)
+        ? '✓ Alle ' + visible.length + ' Treffer gewählt'
+        : '☑️ Alle ' + visible.length + ' Treffer auswählen';
+      btnSelectAll.title = 'Beschränkt die Auswahl strikt auf die ' + visible.length + ' gefilterten Treffer';
+    } else {
+      btnSelectAll.textContent = '☑️ Alle auswählen';
+      btnSelectAll.title = 'Wählt alle ' + allRules.length + ' Regeln aus';
+    }
   }
-  if (exportCount) exportCount.textContent = String(count);
-  if (deleteCount) deleteCount.textContent = String(count);
+
+  if (btnSelectAllGlobal) {
+    btnSelectAllGlobal.style.display = (isFiltered && visible.length < allRules.length) ? 'inline-block' : 'none';
+    btnSelectAllGlobal.textContent = '🌐 Alle ' + allRules.length + ' (global)';
+  }
+
+  if (btnRestrictFiltered) {
+    btnRestrictFiltered.style.display = (isFiltered && hiddenSelectedCount > 0) ? 'inline-block' : 'none';
+    btnRestrictFiltered.textContent = '🎯 Nur die ' + visibleSelectedCount + ' Treffer (' + hiddenSelectedCount + ' abwählen)';
+  }
+
+  const btnBulkFilterSelected = document.getElementById('btn-bulk-filter-selected');
+  if (btnBulkFilterSelected) {
+    if (showOnlySelectedMode) {
+      btnBulkFilterSelected.textContent = '🌐 Alle Regeln anzeigen';
+      btnBulkFilterSelected.style.background = '#0284c7';
+      btnBulkFilterSelected.style.borderColor = '#38bdf8';
+      btnBulkFilterSelected.style.color = '#ffffff';
+    } else {
+      btnBulkFilterSelected.textContent = '⭐ Auf Ausgewählte filtern (' + totalSelectedCount + ')';
+      btnBulkFilterSelected.style.background = '#854d0e';
+      btnBulkFilterSelected.style.borderColor = '#ca8a04';
+      btnBulkFilterSelected.style.color = '#fef08a';
+    }
+    btnBulkFilterSelected.style.display = totalSelectedCount > 0 ? 'inline-block' : 'none';
+  }
+
+  const btnSelectFiltered = document.getElementById('btn-select-filtered');
+  if (btnSelectFiltered) {
+    btnSelectFiltered.style.display = (isFiltered && visible.length > 0) ? 'inline-block' : 'none';
+    btnSelectFiltered.textContent = (visibleSelectedCount === visible.length && hiddenSelectedCount === 0)
+      ? '✓ ' + visible.length + ' Treffer ausgewählt'
+      : '☑️ ' + visible.length + ' Treffer auswählen';
+  }
+
+  if (countBadge) {
+    if (isFiltered) {
+      if (hiddenSelectedCount > 0) {
+        countBadge.textContent = totalSelectedCount + ' ausgewählt (' + visibleSelectedCount + ' Treffer + ' + hiddenSelectedCount + ' außerhalb)';
+        countBadge.style.background = '#d97706';
+      } else {
+        countBadge.textContent = visibleSelectedCount + ' von ' + visible.length + ' Treffern ausgewählt';
+        countBadge.style.background = visibleSelectedCount > 0 ? '#0284c7' : '#334155';
+      }
+    } else {
+      countBadge.textContent = totalSelectedCount + ' von ' + allRules.length + ' ' + (totalSelectedCount === 1 ? 'Regel ausgewählt' : 'Regeln ausgewählt');
+      countBadge.style.background = totalSelectedCount > 0 ? '#0284c7' : '#334155';
+    }
+  }
+
+  if (exportCount) exportCount.textContent = String(totalSelectedCount);
+  if (deleteCount) deleteCount.textContent = String(totalSelectedCount);
   if (openModalBtn) {
-    openModalBtn.textContent = count > 0 ? '✏️ Massenbearbeitung (' + count + ')...' : '✏️ Massenbearbeitung...';
+    openModalBtn.textContent = totalSelectedCount > 0 ? '✏️ Massenbearbeitung (' + totalSelectedCount + ')...' : '✏️ Massenbearbeitung...';
   }
 
   let activeCount = 0;
-  rules.forEach((r) => {
+  allRules.forEach((r) => {
     if (selectedRuleIds.has(r.id) && r.enabled) activeCount++;
   });
-  const inactiveCount = count - activeCount;
+  const inactiveCount = totalSelectedCount - activeCount;
   if (statsText) {
     statsText.textContent = activeCount + ' aktiv · ' + inactiveCount + ' inaktiv';
   }
 
   if (hint) {
-    if (count > 0) {
-      hint.innerHTML = '<span style="color:#38bdf8; font-weight:700;">✓ ' + count + ' ' + (count === 1 ? 'Regel ausgewählt.' : 'Regeln ausgewählt.') + '</span> Klicken Sie auf <strong>"Massenbearbeitung"</strong>, <strong>"Farb-Sync"</strong> oder eine der Schnellaktionen oben.';
+    if (isFiltered && hiddenSelectedCount > 0) {
+      hint.innerHTML = '<span style="color:#f59e0b; font-weight:700;">⚠️ Hinweis:</span> Es sind noch <strong>' + hiddenSelectedCount + ' Regeln außerhalb des Filters</strong> markiert. Klicken Sie auf <strong>"🎯 Nur Treffer"</strong>, um Aktionen auf die ' + visible.length + ' Suchtreffer zu beschränken.';
+    } else if (totalSelectedCount > 0) {
+      hint.innerHTML = '<span style="color:#38bdf8; font-weight:700;">✓ ' + totalSelectedCount + ' ' + (totalSelectedCount === 1 ? 'Regel ausgewählt.' : 'Regeln ausgewählt.') + '</span> Klicken Sie auf <strong>"Massenbearbeitung"</strong>, <strong>"Farb-Sync"</strong> oder eine der Schnellaktionen oben.';
     } else {
       hint.textContent = '💡 Markieren Sie Regeln in der Tabelle über die Checkboxen links für gemeinsame Massenbearbeitung, Status-Änderungen oder Farb-Sync.';
     }
@@ -2053,14 +2764,17 @@ let selectedBulkModalColor = 'blue';
 let selectedBulkModalHex = '#37adff';
 
 function openBulkEditModal() {
-  const rules = appConfig.rules || [];
+  const allRules = appConfig.rules || [];
+  const visible = getFilteredRules();
+  const isFiltered = !!rulesFilterQuery.trim();
+
   if (selectedRuleIds.size === 0) {
-    if (rules.length === 0) {
-      alert('Es sind noch keine Regeln vorhanden, die bearbeitet werden könnten.');
+    if (visible.length === 0) {
+      alert('Es sind keine Regeln passend zum aktuellen Filter vorhanden.');
       return;
     }
-    // Automatically select all rules if none were explicitly checked
-    rules.forEach((r) => selectedRuleIds.add(r.id));
+    // Automatically select visible rules if none were explicitly checked
+    (isFiltered ? visible : allRules).forEach((r) => selectedRuleIds.add(r.id));
     updateBulkToolbar();
     renderRules();
   }
@@ -2069,7 +2783,13 @@ function openBulkEditModal() {
   const overlay = document.getElementById('bulk-edit-modal-overlay');
   const title = document.getElementById('bulk-edit-title');
   if (title) {
-    title.textContent = '✏️ Massenbearbeitung (' + count + ' ' + (count === 1 ? 'Regel' : 'Regeln') + ')';
+    const visibleSelectedCount = visible.filter((r) => selectedRuleIds.has(r.id)).length;
+    const hiddenSelectedCount = selectedRuleIds.size - visibleSelectedCount;
+    if (isFiltered && hiddenSelectedCount > 0) {
+      title.textContent = '✏️ Massenbearbeitung (' + count + ' Regeln: ' + visibleSelectedCount + ' Treffer + ' + hiddenSelectedCount + ' außerhalb)';
+    } else {
+      title.textContent = '✏️ Massenbearbeitung (' + count + ' ' + (count === 1 ? 'Regel' : 'Regeln') + ')';
+    }
   }
 
   // Reset form controls
@@ -2079,6 +2799,8 @@ function openBulkEditModal() {
   if (modeSel) modeSel.value = 'keep';
   const topbarSel = document.getElementById('be-topbar');
   if (topbarSel) topbarSel.value = 'keep';
+  const haloSel = document.getElementById('be-halo');
+  if (haloSel) haloSel.value = 'keep';
 
   const chkColor = document.getElementById('be-apply-color');
   if (chkColor) chkColor.checked = false;
@@ -2134,14 +2856,10 @@ function initBulkToolbar() {
       btn.appendChild(document.createTextNode(opt.name));
 
       btn.addEventListener('click', async () => {
-        if (selectedRuleIds.size === 0) {
-          (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-        }
-        (appConfig.rules || []).forEach((r) => {
-          if (selectedRuleIds.has(r.id)) {
-            r.color = opt.hex;
-            r.firefoxContainerColor = opt.id;
-          }
+        const targetRules = getEffectiveBulkTargetRules();
+        targetRules.forEach((r) => {
+          r.color = opt.hex;
+          r.firefoxContainerColor = opt.id;
         });
         await saveConfigToStorage();
         closeBulkPopovers();
@@ -2172,13 +2890,9 @@ function initBulkToolbar() {
       btn.appendChild(lbl);
 
       btn.addEventListener('click', async () => {
-        if (selectedRuleIds.size === 0) {
-          (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-        }
-        (appConfig.rules || []).forEach((r) => {
-          if (selectedRuleIds.has(r.id)) {
-            r.firefoxContainerIcon = opt.id;
-          }
+        const targetRules = getEffectiveBulkTargetRules();
+        targetRules.forEach((r) => {
+          r.firefoxContainerIcon = opt.id;
         });
         await saveConfigToStorage();
         closeBulkPopovers();
@@ -2199,18 +2913,14 @@ function initBulkToolbar() {
       btn.style.fontSize = '13px';
       btn.textContent = em;
       btn.addEventListener('click', async () => {
-        if (selectedRuleIds.size === 0) {
-          (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-        }
-        (appConfig.rules || []).forEach((r) => {
-          if (selectedRuleIds.has(r.id)) {
-            let clean = r.containerName || '';
-            if (r.customEmoji && clean.startsWith(r.customEmoji)) {
-              clean = clean.slice(r.customEmoji.length).trim();
-            }
-            r.customEmoji = em;
-            r.containerName = em + ' ' + clean;
+        const targetRules = getEffectiveBulkTargetRules();
+        targetRules.forEach((r) => {
+          let clean = r.containerName || '';
+          if (r.customEmoji && clean.startsWith(r.customEmoji)) {
+            clean = clean.slice(r.customEmoji.length).trim();
           }
+          r.customEmoji = em;
+          r.containerName = em + ' ' + clean;
         });
         await saveConfigToStorage();
         closeBulkPopovers();
@@ -2342,6 +3052,11 @@ function initBulkToolbar() {
         if (beTopbar && beTopbar !== 'keep') {
           r.accentBorder = beTopbar === 'enable';
         }
+
+        const beHalo = document.getElementById('be-halo')?.value;
+        if (beHalo && beHalo !== 'keep') {
+          r.enableFaviconHalo = beHalo === 'enable';
+        }
       }
     });
 
@@ -2382,13 +3097,9 @@ function initBulkToolbar() {
 
   document.getElementById('btn-bulk-hex-apply')?.addEventListener('click', async () => {
     const hex = document.getElementById('bulk-hex-input')?.value || '#37adff';
-    if (selectedRuleIds.size === 0) {
-      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-    }
-    (appConfig.rules || []).forEach((r) => {
-      if (selectedRuleIds.has(r.id)) {
-        r.color = hex;
-      }
+    const targetRules = getEffectiveBulkTargetRules();
+    targetRules.forEach((r) => {
+      r.color = hex;
     });
     await saveConfigToStorage();
     closeBulkPopovers();
@@ -2398,18 +3109,14 @@ function initBulkToolbar() {
   document.getElementById('btn-bulk-emoji-apply')?.addEventListener('click', async () => {
     const em = (document.getElementById('bulk-emoji-input')?.value || '').trim();
     if (!em) return;
-    if (selectedRuleIds.size === 0) {
-      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-    }
-    (appConfig.rules || []).forEach((r) => {
-      if (selectedRuleIds.has(r.id)) {
-        let clean = r.containerName || '';
-        if (r.customEmoji && clean.startsWith(r.customEmoji)) {
-          clean = clean.slice(r.customEmoji.length).trim();
-        }
-        r.customEmoji = em;
-        r.containerName = em + ' ' + clean;
+    const targetRules = getEffectiveBulkTargetRules();
+    targetRules.forEach((r) => {
+      let clean = r.containerName || '';
+      if (r.customEmoji && clean.startsWith(r.customEmoji)) {
+        clean = clean.slice(r.customEmoji.length).trim();
       }
+      r.customEmoji = em;
+      r.containerName = em + ' ' + clean;
     });
     await saveConfigToStorage();
     closeBulkPopovers();
@@ -2417,31 +3124,30 @@ function initBulkToolbar() {
   });
 
   document.getElementById('btn-bulk-emoji-clear')?.addEventListener('click', async () => {
-    if (selectedRuleIds.size === 0) {
-      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-    }
-    (appConfig.rules || []).forEach((r) => {
-      if (selectedRuleIds.has(r.id)) {
-        let clean = r.containerName || '';
-        if (r.customEmoji && clean.startsWith(r.customEmoji)) {
-          clean = clean.slice(r.customEmoji.length).trim();
-        }
-        r.customEmoji = '';
-        r.containerName = clean;
+    const targetRules = getEffectiveBulkTargetRules();
+    targetRules.forEach((r) => {
+      let clean = r.containerName || '';
+      if (r.customEmoji && clean.startsWith(r.customEmoji)) {
+        clean = clean.slice(r.customEmoji.length).trim();
       }
+      r.customEmoji = '';
+      r.containerName = clean;
     });
     await saveConfigToStorage();
     closeBulkPopovers();
     renderRules();
   });
 
-  // Master Checkbox
+  // Master Checkbox (Table Header)
   document.getElementById('chk-all-rules')?.addEventListener('change', () => {
-    const rules = appConfig.rules || [];
-    if (selectedRuleIds.size === rules.length) {
-      selectedRuleIds.clear();
+    const visible = getFilteredRules();
+    const allVisibleSelected = visible.length > 0 && visible.every((r) => selectedRuleIds.has(r.id));
+    if (allVisibleSelected) {
+      // Deselect only the visible rules
+      visible.forEach((r) => selectedRuleIds.delete(r.id));
     } else {
-      rules.forEach((r) => selectedRuleIds.add(r.id));
+      // Add visible rules to selection without wiping selections from previous searches!
+      visible.forEach((r) => selectedRuleIds.add(r.id));
     }
     updateBulkToolbar();
     renderRules();
@@ -2449,8 +3155,84 @@ function initBulkToolbar() {
 
   // Select all & clear buttons
   document.getElementById('btn-bulk-select-all')?.addEventListener('click', () => {
+    const visible = getFilteredRules();
+    const isFiltered = !!rulesFilterQuery.trim() || showOnlySelectedMode;
+    if (isFiltered) {
+      // Add all visible filtered rules to selection without wiping previous selections!
+      visible.forEach((r) => selectedRuleIds.add(r.id));
+    } else {
+      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    }
+    updateBulkToolbar();
+    renderRules();
+  });
+
+  document.getElementById('btn-bulk-filter-selected')?.addEventListener('click', () => {
+    showOnlySelectedMode = !showOnlySelectedMode;
+    renderRules();
+    updateBulkToolbar();
+  });
+
+  document.getElementById('btn-select-filtered')?.addEventListener('click', () => {
+    const visible = getFilteredRules();
+    // Click on "Nur diese Treffer": clear non-matching rules and select ONLY the filtered hits!
+    selectedRuleIds.clear();
+    visible.forEach((r) => selectedRuleIds.add(r.id));
+    updateBulkToolbar();
+    renderRules();
+  });
+
+  document.getElementById('btn-add-filtered-to-selection')?.addEventListener('click', () => {
+    const visible = getFilteredRules();
+    // Add current matches to selection without clearing previous ones (kumulative Auswahl)!
+    visible.forEach((r) => selectedRuleIds.add(r.id));
+    updateBulkToolbar();
+    renderRules();
+  });
+
+  document.getElementById('btn-filter-only-selected')?.addEventListener('click', () => {
+    if (selectedRuleIds.size === 0 && !showOnlySelectedMode) {
+      alert('Es sind aktuell keine Regeln ausgewählt. Markieren Sie zuerst einige Regeln über die Suchfilter oder Checkboxen, um danach nur diese anzuzeigen.');
+      return;
+    }
+    showOnlySelectedMode = !showOnlySelectedMode;
+    renderRules();
+    updateBulkToolbar();
+  });
+
+  document.getElementById('btn-bulk-restrict-to-filter')?.addEventListener('click', () => {
+    const visible = getFilteredRules();
+    selectedRuleIds.clear();
+    visible.forEach((r) => selectedRuleIds.add(r.id));
+    updateBulkToolbar();
+    renderRules();
+  });
+
+  document.getElementById('btn-bulk-select-all-global')?.addEventListener('click', () => {
     (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
     updateBulkToolbar();
+    renderRules();
+  });
+
+  // Filter input and clear listeners
+  document.getElementById('rules-filter-input')?.addEventListener('input', (e) => {
+    const prevQuery = rulesFilterQuery;
+    rulesFilterQuery = e.target.value.trim();
+    const allRules = appConfig.rules || [];
+    // If all rules were previously selected and the user begins filtering,
+    // automatically restrict selection to the filtered matches!
+    if (!prevQuery && rulesFilterQuery && selectedRuleIds.size === allRules.length) {
+      const visible = getFilteredRules();
+      selectedRuleIds.clear();
+      visible.forEach((r) => selectedRuleIds.add(r.id));
+    }
+    renderRules();
+  });
+
+  document.getElementById('btn-rules-filter-clear')?.addEventListener('click', () => {
+    const inp = document.getElementById('rules-filter-input');
+    if (inp) inp.value = '';
+    rulesFilterQuery = '';
     renderRules();
   });
 
@@ -2462,33 +3244,27 @@ function initBulkToolbar() {
 
   // Enable / Disable / Toggle buttons
   document.getElementById('btn-bulk-enable')?.addEventListener('click', async () => {
-    if (selectedRuleIds.size === 0) {
-      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-    }
-    (appConfig.rules || []).forEach((r) => {
-      if (selectedRuleIds.has(r.id)) r.enabled = true;
+    const targetRules = getEffectiveBulkTargetRules();
+    targetRules.forEach((r) => {
+      r.enabled = true;
     });
     await saveConfigToStorage();
     renderRules();
   });
 
   document.getElementById('btn-bulk-disable')?.addEventListener('click', async () => {
-    if (selectedRuleIds.size === 0) {
-      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-    }
-    (appConfig.rules || []).forEach((r) => {
-      if (selectedRuleIds.has(r.id)) r.enabled = false;
+    const targetRules = getEffectiveBulkTargetRules();
+    targetRules.forEach((r) => {
+      r.enabled = false;
     });
     await saveConfigToStorage();
     renderRules();
   });
 
   document.getElementById('btn-bulk-toggle')?.addEventListener('click', async () => {
-    if (selectedRuleIds.size === 0) {
-      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
-    }
-    (appConfig.rules || []).forEach((r) => {
-      if (selectedRuleIds.has(r.id)) r.enabled = !r.enabled;
+    const targetRules = getEffectiveBulkTargetRules();
+    targetRules.forEach((r) => {
+      r.enabled = !r.enabled;
     });
     await saveConfigToStorage();
     renderRules();
@@ -2496,12 +3272,21 @@ function initBulkToolbar() {
 
   // Bulk Delete
   document.getElementById('btn-bulk-delete')?.addEventListener('click', async () => {
-    const count = selectedRuleIds.size;
-    if (count === 0) {
+    if (selectedRuleIds.size === 0) {
       alert('Bitte markieren Sie zuerst mindestens eine Regel zum Löschen.');
       return;
     }
-    if (confirm('Möchten Sie alle ' + count + ' ausgewählten Regeln wirklich löschen?')) {
+    const count = selectedRuleIds.size;
+    const isFiltered = !!rulesFilterQuery.trim();
+    const visible = getFilteredRules();
+    const visibleSelected = visible.filter((r) => selectedRuleIds.has(r.id)).length;
+    const hiddenSelected = count - visibleSelected;
+
+    let msg = 'Möchten Sie alle ' + count + ' ausgewählten Regeln wirklich löschen?';
+    if (isFiltered && hiddenSelected > 0) {
+      msg = 'ACHTUNG: Es sind aktuell ' + count + ' Regeln markiert:\\n• ' + visibleSelected + ' sichtbare Filter-Treffer\\n• ' + hiddenSelected + ' verborgene Regeln außerhalb des Filters\\n\\nWirklich alle ' + count + ' Regeln löschen?';
+    }
+    if (confirm(msg)) {
       appConfig.rules = (appConfig.rules || []).filter((r) => !selectedRuleIds.has(r.id));
       appConfig.rules.forEach((r, i) => r.priority = i + 1);
       selectedRuleIds.clear();
@@ -2512,16 +3297,16 @@ function initBulkToolbar() {
 
   // Bulk Export
   document.getElementById('btn-bulk-export')?.addEventListener('click', () => {
-    const selectedRules = (appConfig.rules || []).filter((r) => selectedRuleIds.has(r.id));
-    if (selectedRules.length === 0) {
+    const targetRules = getEffectiveBulkTargetRules();
+    if (targetRules.length === 0) {
       alert('Bitte markieren Sie mindestens eine Regel für den Export.');
       return;
     }
-    const blob = new Blob([JSON.stringify(selectedRules, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(targetRules, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'tabchroma-rules-selected-' + selectedRules.length + '.json';
+    a.download = 'tabchroma-rules-selected-' + targetRules.length + '.json';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   });
@@ -2582,6 +3367,8 @@ function openRuleModal(index) {
     if (inpEmoji) inpEmoji.value = rule.customEmoji || '';
     if (inpEnableFavicon) inpEnableFavicon.checked = rule.enableFaviconEmoji !== false;
     if (inpEnableTitle) inpEnableTitle.checked = rule.enableTitleEmoji !== false;
+    const inpHalo = document.getElementById('inp-enable-favicon-halo');
+    if (inpHalo) inpHalo.checked = rule.enableFaviconHalo !== undefined ? rule.enableFaviconHalo : (appConfig.enableFaviconContrastHalo !== false);
     selectedModalIcon = rule.firefoxContainerIcon || 'circle';
     inpIcon.value = selectedModalIcon;
     inpMode.value = rule.colorMode || 'container';
@@ -2599,6 +3386,8 @@ function openRuleModal(index) {
     if (inpEmoji) inpEmoji.value = '';
     if (inpEnableFavicon) inpEnableFavicon.checked = true;
     if (inpEnableTitle) inpEnableTitle.checked = true;
+    const inpHalo = document.getElementById('inp-enable-favicon-halo');
+    if (inpHalo) inpHalo.checked = appConfig.enableFaviconContrastHalo !== false;
     selectedModalIcon = 'circle';
     inpIcon.value = selectedModalIcon;
     inpMode.value = appConfig.defaultMode || 'container';
@@ -2659,6 +3448,12 @@ function updateModalPreview() {
 
   // Favicon dynamic preview
   if (simFavicon) {
+    const inpHalo = document.getElementById('inp-enable-favicon-halo');
+    const hasHalo = inpHalo ? inpHalo.checked : true;
+    simFavicon.style.filter = hasHalo
+      ? 'drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85))'
+      : 'none';
+
     if (emoji && inpEnableFavicon?.checked) {
       simFavicon.textContent = emoji;
       simFavicon.style.background = selectedModalHex;
@@ -2744,6 +3539,7 @@ document.getElementById('inp-name')?.addEventListener('input', updateModalPrevie
 document.getElementById('inp-container-name')?.addEventListener('input', updateModalPreview);
 document.getElementById('inp-enable-favicon-emoji')?.addEventListener('change', updateModalPreview);
 document.getElementById('inp-enable-title-emoji')?.addEventListener('change', updateModalPreview);
+document.getElementById('inp-enable-favicon-halo')?.addEventListener('change', updateModalPreview);
 document.getElementById('inp-mode')?.addEventListener('change', updateModalPreview);
 
 document.getElementById('inp-type')?.addEventListener('change', (e) => {
@@ -2771,6 +3567,7 @@ document.getElementById('modal-save')?.addEventListener('click', async () => {
   const inpEmoji = (document.getElementById('inp-emoji')?.value || '').trim();
   const inpEnableFavicon = document.getElementById('inp-enable-favicon-emoji')?.checked !== false;
   const inpEnableTitle = document.getElementById('inp-enable-title-emoji')?.checked !== false;
+  const inpEnableHalo = document.getElementById('inp-enable-favicon-halo')?.checked !== false;
   const inpIcon = document.getElementById('inp-icon').value;
   const inpMode = document.getElementById('inp-mode').value;
   const inpTopBar = document.getElementById('inp-topbar').checked;
@@ -2794,6 +3591,7 @@ document.getElementById('modal-save')?.addEventListener('click', async () => {
     rule.customEmoji = inpEmoji;
     rule.enableFaviconEmoji = inpEnableFavicon;
     rule.enableTitleEmoji = inpEnableTitle;
+    rule.enableFaviconHalo = inpEnableHalo;
     rule.firefoxContainerIcon = inpIcon;
     rule.colorMode = inpMode;
     rule.accentBorder = inpTopBar;
@@ -2810,6 +3608,7 @@ document.getElementById('modal-save')?.addEventListener('click', async () => {
       customEmoji: inpEmoji,
       enableFaviconEmoji: inpEnableFavicon,
       enableTitleEmoji: inpEnableTitle,
+      enableFaviconHalo: inpEnableHalo,
       firefoxContainerIcon: inpIcon,
       colorMode: inpMode,
       accentBorder: inpTopBar,
