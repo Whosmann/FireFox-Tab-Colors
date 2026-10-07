@@ -47,6 +47,8 @@ export interface TabColorRule {
   accentBorder: boolean;
   enabled: boolean;
   priority: number; // lower number = evaluated first
+  tabOpacity?: number; // Optional opacity override (0.15 - 1.0)
+  enableFaviconHalo?: boolean; // Subtle contrast halo for icons
 }
 
 export interface ExtensionConfig {
@@ -62,6 +64,8 @@ export interface ExtensionConfig {
   enableFaviconBadge: boolean;
   enableActiveTabTheme: boolean;
   revertUnmatchedToDefault?: boolean;
+  activeTabOpacity?: number; // Deckkraft des aktiven Tabs (0.15 bis 1.0, z. B. 0.35 für perfekten Favicon-Kontrast)
+  enableFaviconContrastHalo?: boolean; // Schützt gleichfarbige Favicons vor dem Verschwimmen im Tab-Hintergrund
 }
 
 export interface MatchResult {

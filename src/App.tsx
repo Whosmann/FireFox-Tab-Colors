@@ -35,6 +35,8 @@ const INITIAL_CONFIG: ExtensionConfig = {
   enableFaviconBadge: true,
   enableActiveTabTheme: false, // Default false: new containers do NOT alter Firefox's browser window Farbschema!
   revertUnmatchedToDefault: true,
+  activeTabOpacity: 0.35, // 35% Deckkraft: Gleichfarbige Favicons bleiben 100% erkennbar
+  enableFaviconContrastHalo: true, // Schutz-Halo für Favicons
 };
 
 export default function App() {
@@ -50,6 +52,13 @@ export default function App() {
         // Restore exact Mozilla AMO Add-on ID for registered extensions
         if (!parsed.geckoId || parsed.geckoId.includes('@firefox-extension.local')) {
           parsed.geckoId = 'tabchroma-tab-color@whosmann.de';
+        }
+
+        if (parsed.activeTabOpacity === undefined) {
+          parsed.activeTabOpacity = 0.35;
+        }
+        if (parsed.enableFaviconContrastHalo === undefined) {
+          parsed.enableFaviconContrastHalo = true;
         }
 
         // Strictly sanitize any rule referencing azure or proprietary cloud
@@ -222,6 +231,10 @@ export default function App() {
           <div className="space-y-6">
             <FirefoxTabSimulator
               rules={config.rules}
+              activeTabOpacity={config.activeTabOpacity ?? 0.35}
+              enableFaviconContrastHalo={config.enableFaviconContrastHalo !== false}
+              onChangeOpacity={(op) => handleChangeConfig({ activeTabOpacity: op })}
+              onToggleHalo={(halo) => handleChangeConfig({ enableFaviconContrastHalo: halo })}
               onAddRuleClick={() => {
                 setEditingRule(null);
                 setIsRuleModalOpen(true);
@@ -356,6 +369,7 @@ export default function App() {
         defaultColor={config.defaultColor}
         defaultContainerColor={config.defaultContainerColor}
         defaultMode={config.defaultMode}
+        existingRules={config.rules}
       />
 
       {/* Modal for bumping extension version */}

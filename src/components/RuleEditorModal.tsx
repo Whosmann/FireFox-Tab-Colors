@@ -10,7 +10,8 @@ import {
 import { 
   FIREFOX_CONTAINER_COLORS, 
   findClosestContainerColor, 
-  validatePattern 
+  validatePattern,
+  hexToRgba
 } from '../utils/urlMatcher';
 
 interface RuleEditorModalProps {
@@ -21,6 +22,7 @@ interface RuleEditorModalProps {
   defaultColor?: string;
   defaultContainerColor?: FirefoxContainerColor;
   defaultMode?: ColorMode;
+  existingRules?: TabColorRule[];
 }
 
 const CONTAINER_ICONS: { id: FirefoxContainerIcon; label: string; icon: string; category: string }[] = [
@@ -46,6 +48,7 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
   defaultColor = '#37adff',
   defaultContainerColor = 'blue',
   defaultMode = 'container',
+  existingRules = [],
 }) => {
   const [name, setName] = useState(initialRule?.name || '');
   const [patternType, setPatternType] = useState<UrlPatternType>(initialRule?.patternType || 'domain');
@@ -120,6 +123,15 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
   if (!isOpen) return null;
 
   const validation = validatePattern(pattern, patternType);
+
+  const duplicateConflict = (pattern.trim() && existingRules && existingRules.length > 0)
+    ? existingRules.find(
+        (r) =>
+          r.id !== initialRule?.id &&
+          r.patternType === patternType &&
+          r.pattern.trim().toLowerCase() === pattern.trim().toLowerCase()
+      )
+    : null;
 
   const handleContainerColorSelect = (cName: FirefoxContainerColor) => {
     setContainerColor(cName);
@@ -271,6 +283,20 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
               <div className="text-[11px] text-rose-600 flex items-center gap-1">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                 <span>{validation.error}</span>
+              </div>
+            )}
+
+            {duplicateConflict && (
+              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2 shadow-2xs">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-amber-950">
+                    Achtung: Doppeltes URL-Pattern!
+                  </div>
+                  <div className="text-[11px] text-amber-800 mt-0.5">
+                    Regel <strong>"{duplicateConflict.name}"</strong> (Priorität #{duplicateConflict.priority}) verwendet bereits exakt dieses Pattern ({patternType}: <code>{duplicateConflict.pattern}</code>). Da Firefox Regeln streng von oben nach unten abgleicht, hat die weiter oben stehende Regel Vorrang.
+                  </div>
+                </div>
               </div>
             )}
 
@@ -651,15 +677,21 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
             <div className="flex items-center gap-2">
               {/* Tab sample */}
               <div
-                className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-white rounded-t-lg text-xs font-medium shadow-sm"
-                style={{ borderTop: `3px solid ${color}` }}
+                className="flex items-center gap-2 px-3 py-2 text-white rounded-t-lg text-xs font-medium shadow-sm transition-all"
+                style={{ 
+                  borderTop: `3px solid ${color}`,
+                  backgroundColor: hexToRgba(color, 0.35),
+                }}
               >
-                <span className="text-sm">
+                <span 
+                  className="text-sm"
+                  style={{ filter: 'drop-shadow(0 0 1.5px rgba(255,255,255,0.85))' }}
+                >
                   {CONTAINER_ICONS.find((i) => i.id === containerIcon)?.icon || '🦊'}
                 </span>
                 <span>{name || 'Tab Preview'}</span>
                 <span
-                  className="text-[10px] px-1.5 py-0.5 rounded ml-1 font-semibold flex items-center gap-1"
+                  className="text-[10px] px-1.5 py-0.5 rounded ml-1 font-semibold flex items-center gap-1 border border-white/20"
                   style={{ backgroundColor: `${color}33`, color }}
                 >
                   <span>{CONTAINER_ICONS.find((i) => i.id === containerIcon)?.icon}</span>

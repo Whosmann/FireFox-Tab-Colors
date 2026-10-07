@@ -238,19 +238,42 @@ async function getOrCreateContainer(name, color, icon) {
   }
 }
 
+// Helper to convert hex + opacity to rgba string
+function hexToRgba(hex, alpha) {
+  if (!hex) return 'rgba(55, 173, 255, ' + (alpha !== undefined ? alpha : 0.35) + ')';
+  var clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean.split('').map(function(c) { return c + c; }).join('');
+  }
+  if (clean.length >= 6) {
+    var r = parseInt(clean.substring(0, 2), 16) || 0;
+    var g = parseInt(clean.substring(2, 4), 16) || 0;
+    var b = parseInt(clean.substring(4, 6), 16) || 0;
+    var a = (alpha !== undefined && alpha !== null) ? Math.max(0, Math.min(1, Number(alpha))) : 0.35;
+    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + a + ')';
+  }
+  return hex;
+}
+
 // Apply dynamic theme color to active window
 async function applyThemeForTab(windowId, rule) {
   if (!appConfig.enableActiveTabTheme) return;
 
   if (rule && rule.color) {
     const hex = rule.color;
+    // Deckkraft des aktiven Tabs reduzieren, damit Favicons mit gleicher Farbe deutlich sichtbar bleiben
+    const opacity = (typeof rule.tabOpacity === 'number')
+      ? rule.tabOpacity
+      : ((typeof appConfig.activeTabOpacity === 'number') ? appConfig.activeTabOpacity : 0.35);
+    const tabSelectedColor = hexToRgba(hex, opacity);
+
     try {
       await browser.theme.update(windowId, {
         colors: {
           frame: '#181825',
           toolbar: '#1e1e2e',
-          tab_selected: hex,
-          tab_line: hex,
+          tab_selected: tabSelectedColor, // Reduzierte Deckkraft / Transparenz
+          tab_line: hex, // 100% kräftige Farblinie am oberen Rand
           tab_loading: hex,
           toolbar_field_focus: hex,
           toolbar_text: '#f8fafc',
@@ -379,6 +402,23 @@ browser.runtime.onMessage.addListener(async (message) => {
     return { matched: !!rule, rule };
   }
   return null;
+});
+
+// React immediately when user changes settings in options.html
+browser.storage.onChanged.addListener(async (changes, area) => {
+  if (area === 'local' && changes.tabChromaConfig) {
+    appConfig = changes.tabChromaConfig.newValue || appConfig;
+    currentRules = appConfig.rules || [];
+    containerCache.clear();
+    try {
+      const activeTabs = await browser.tabs.query({ active: true, currentWindow: true });
+      if (activeTabs && activeTabs[0] && activeTabs[0].url) {
+        const rule = findMatchingRule(activeTabs[0].url);
+        await applyThemeForTab(activeTabs[0].windowId, rule);
+        await notifyTabVisuals(activeTabs[0].id, rule);
+      }
+    } catch (e) {}
+  }
 });
 
 // Initialize on load
@@ -840,6 +880,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     .del-btn { background: #ef4444; color: white; padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
     .priority-btn { background: #1f2937; color: #94a3b8; border: 1px solid #374151; border-radius: 4px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .priority-btn:hover { color: #fff; background: #374151; }
+    tr.selected-row { background: rgba(56, 189, 248, 0.12) !important; }
+    .bulk-btn-group { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid #334155; }
+    .bulk-sub-btn { background: #1e293b; color: #cbd5e1; border: none; padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .bulk-sub-btn:hover { background: #334155; color: #fff; }
 
     /* Modals */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(3px); }
@@ -888,6 +932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="desc">Definiere Standard-Farben, URL-Regeln, Symbole und Multi-Account Container für Firefox Tabs.</div>
       </div>
       <div class="actions-bar">
+        <button id="btn-quick-bulk" class="btn btn-secondary" title="Massenbearbeitungs-Dialog für ausgewählte Regeln öffnen">⚡ Massenbearbeitung</button>
         <button id="btn-import-modal-open" class="btn btn-secondary">📥 Import JSON (Distinct)</button>
         <button id="btn-export" class="btn btn-secondary">📤 Export JSON</button>
         <button id="btn-add-rule" class="btn btn-primary">+ Neue Regel erstellen</button>
@@ -967,6 +1012,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
       </div>
 
+      <!-- 4. Deckkraft des aktiven Tabs & Favicon-Kontrast -->
+      <div style="margin-top: 14px; padding: 12px 14px; background: #182234; border: 1px solid #283548; border-radius: 8px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+          <div>
+            <div style="font-size: 12px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px;">
+              <span>🔍 Deckkraft des aktiven Tabs (Favicon-Kontrast)</span>
+              <span id="lbl-opacity-val" style="background:#0369a1; color:#e0f2fe; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700;">35%</span>
+            </div>
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
+              Reduziert die Deckkraft des aktiven Tabs, damit Favicons mit gleicher Farbe wie der Tab (z. B. rotes Icon auf rotem Tab) sichtbar bleiben.
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <input type="range" id="def-opacity" min="0.15" max="1.0" step="0.05" value="0.35" style="width: 130px; cursor: pointer;">
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.25" style="font-size:10px; padding:3px 6px;">25%</button>
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.35" style="font-size:10px; padding:3px 6px;">35%</button>
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.50" style="font-size:10px; padding:3px 6px;">50%</button>
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="1.00" style="font-size:10px; padding:3px 6px;">100%</button>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
         <button id="btn-save-defaults" class="btn btn-primary">💾 Standard-Einstellungen speichern</button>
         <span id="defaults-feedback" style="font-size:12px; color:#10b981; font-weight:700; display:none;">✓ Standard-Einstellungen live in Firefox gespeichert!</span>
@@ -984,10 +1051,84 @@ document.addEventListener('DOMContentLoaded', async () => {
       <span id="rules-count-pill" style="font-size:11px; background:#1e293b; color:#38bdf8; padding:3px 8px; border-radius:12px; border:1px solid #334155;">0 Regeln</span>
     </div>
 
+    <!-- Massenbearbeitung & Bulk Action Toolbar (Immer sichtbar & direkt erreichbar) -->
+    <div class="card" id="card-bulk" style="margin-bottom: 16px; padding: 14px 16px; background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span style="font-size: 13px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px;">
+            <span>⚡ Massenbearbeitung (Bulk Edit) &amp; Aktionen</span>
+            <span id="bulk-count-badge" style="background: #334155; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700;">0 Regeln ausgewählt</span>
+          </span>
+          <span id="bulk-stats-text" style="font-size: 11px; color: #94a3b8; border-left: 1px solid #334155; padding-left: 10px;">0 aktiv · 0 inaktiv</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" id="btn-bulk-select-all" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">☑️ Alle auswählen</button>
+          <button type="button" id="btn-bulk-clear" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">✕ Auswahl aufheben</button>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative;">
+        <!-- Massenbearbeitung Dialog button -->
+        <button type="button" id="btn-open-bulk-edit" class="btn btn-primary" style="font-size: 11px; padding: 6px 12px; background: #4f46e5; border-color: #6366f1;" title="Öffnet den Dialog für gemeinsame Massenbearbeitung mehrerer Regeln">
+          ✏️ Massenbearbeitung...
+        </button>
+
+        <!-- Status Group -->
+        <div class="bulk-btn-group">
+          <button type="button" id="btn-bulk-enable" class="bulk-sub-btn" style="color: #34d399;" title="Alle ausgewählten Regeln aktivieren">✓ Aktivieren</button>
+          <button type="button" id="btn-bulk-disable" class="bulk-sub-btn" style="color: #94a3b8;" title="Alle ausgewählten Regeln deaktivieren">✕ Deaktivieren</button>
+          <button type="button" id="btn-bulk-toggle" class="bulk-sub-btn" style="color: #38bdf8;" title="Status aller ausgewählten Regeln umkehren">🔄 Umschalten</button>
+        </div>
+
+        <!-- Farb-Sync -->
+        <div style="position: relative;">
+          <button type="button" id="btn-bulk-colorsync-toggle" class="btn btn-secondary" style="font-size: 11px; padding: 6px 10px;" title="Farbe für ausgewählte Regeln synchronisieren">🎨 Farb-Sync ▼</button>
+          <div id="bulk-color-popover" style="display: none; position: absolute; left: 0; top: 100%; margin-top: 6px; width: 280px; background: #111827; border: 1px solid #334155; border-radius: 8px; padding: 12px; z-index: 200; box-shadow: 0 10px 25px rgba(0,0,0,0.8);">
+            <div style="font-size: 11px; font-weight: 700; color: #cbd5e1; margin-bottom: 8px;">Container-Farbe synchronisieren:</div>
+            <div id="bulk-swatch-list" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 8px;"></div>
+            <div style="border-top: 1px solid #1f2937; padding-top: 8px; display: flex; gap: 6px; align-items: center;">
+              <input type="color" id="bulk-color-input" value="#37adff" style="width: 28px; height: 28px; border: none; border-radius: 4px; cursor: pointer; background: transparent;">
+              <input type="text" id="bulk-hex-input" value="#37adff" style="flex: 1; padding: 4px 8px; background: #1e293b; border: 1px solid #374151; border-radius: 4px; font-size: 11px; color: #fff; font-family: monospace;">
+              <button type="button" id="btn-bulk-hex-apply" class="btn btn-primary" style="font-size: 10px; padding: 4px 8px;">OK</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Icon-Sync -->
+        <div style="position: relative;">
+          <button type="button" id="btn-bulk-iconsync-toggle" class="btn btn-secondary" style="font-size: 11px; padding: 6px 10px;" title="Container-Icon oder Tab-Symbol synchronisieren">✨ Icon-Sync ▼</button>
+          <div id="bulk-icon-popover" style="display: none; position: absolute; left: 0; top: 100%; margin-top: 6px; width: 300px; background: #111827; border: 1px solid #334155; border-radius: 8px; padding: 12px; z-index: 200; box-shadow: 0 10px 25px rgba(0,0,0,0.8);">
+            <div style="font-size: 11px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">Container-Icon wählen:</div>
+            <div id="bulk-icon-list" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px;"></div>
+            <div style="border-top: 1px solid #1f2937; padding-top: 8px;">
+              <div style="font-size: 11px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">Tab-Symbol / Emoji wählen:</div>
+              <div id="bulk-emoji-quick-list" style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;"></div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <input type="text" id="bulk-emoji-input" placeholder="z. B. 📦" maxlength="10" style="flex: 1; padding: 4px 8px; background: #1e293b; border: 1px solid #374151; border-radius: 4px; font-size: 11px; color: #fff;">
+                <button type="button" id="btn-bulk-emoji-apply" class="btn btn-primary" style="font-size: 10px; padding: 4px 8px;">Setzen</button>
+                <button type="button" id="btn-bulk-emoji-clear" class="btn btn-secondary" style="font-size: 10px; padding: 4px 8px; color: #f87171;">Löschen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export Selected -->
+        <button type="button" id="btn-bulk-export" class="btn btn-secondary" style="font-size: 11px; padding: 6px 10px;" title="Nur ausgewählte Regeln als JSON exportieren">📤 Export (<span id="bulk-export-count">0</span>)</button>
+
+        <!-- Löschen -->
+        <button type="button" id="btn-bulk-delete" class="btn btn-danger" style="font-size: 11px; padding: 6px 10px;" title="Ausgewählte Regeln löschen">🗑️ Löschen (<span id="bulk-delete-count">0</span>)</button>
+      </div>
+
+      <div id="bulk-hint" style="font-size: 11px; color: #64748b; margin-top: 8px;">
+        💡 Markieren Sie Regeln in der Tabelle über die Checkboxen links für gemeinsame Massenbearbeitung, Status-Änderungen oder Farb-Sync.
+      </div>
+    </div>
+
     <table id="rules-table">
       <thead>
         <tr>
-          <th style="width: 70px;">Priorität</th>
+          <th style="width: 36px; text-align: center;"><input type="checkbox" id="chk-all-rules" title="Alle Regeln auswählen oder abwählen"></th>
+          <th style="width: 60px;">Priorität</th>
           <th>Farbe</th>
           <th>Regel-Name &amp; Symbol</th>
           <th>Match-Typ</th>
@@ -1244,6 +1385,128 @@ document.addEventListener('DOMContentLoaded', async () => {
     </div>
   </div>
 
+  <!-- Massenbearbeitung Modal (Bulk Edit Dialog) -->
+  <div id="bulk-edit-modal-overlay" class="modal-overlay">
+    <div class="modal" style="max-width: 640px;">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" id="bulk-edit-title">✏️ Massenbearbeitung (Bulk Edit)</h2>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Wählen Sie die Eigenschaften, die für alle ausgewählten Regeln gleichzeitig aktualisiert werden sollen.</div>
+        </div>
+        <button id="bulk-edit-close" class="close-btn">&times;</button>
+      </div>
+
+      <!-- Option 1: Status -->
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548;">
+        <label class="form-label" style="font-size:11px; font-weight:700; color:#38bdf8; margin-bottom:6px;">1. Aktivierungsstatus anpassen:</label>
+        <select id="be-status" class="form-select">
+          <option value="keep">-- Keine Änderung (beibehalten) --</option>
+          <option value="enable">Alle auf Aktiv setzen (● Aktiv)</option>
+          <option value="disable">Alle auf Deaktiviert setzen (○ Inaktiv)</option>
+          <option value="toggle">Status umkehren (Aktiv ↔ Inaktiv)</option>
+        </select>
+      </div>
+
+      <!-- Option 2: Container-Farbe -->
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548;">
+        <label class="check-label" style="margin-bottom:6px;">
+          <input type="checkbox" id="be-apply-color">
+          <div>
+            <strong style="color:#f8fafc;">2. Container-Farbe überschreiben</strong>
+            <span>Wendet eine gemeinsame Farbe auf alle ausgewählten Regeln an.</span>
+          </div>
+        </label>
+        <div id="be-color-controls" style="display:none; margin-top:8px;">
+          <div class="color-swatch-grid" id="be-color-grid" style="grid-template-columns: repeat(4, 1fr); gap:6px; margin-bottom:8px;">
+            <button type="button" class="swatch-btn selected" data-color="blue" data-hex="#37adff" style="background:#37adff;">Blue</button>
+            <button type="button" class="swatch-btn" data-color="turquoise" data-hex="#00c79a" style="background:#00c79a;">Turquoise</button>
+            <button type="button" class="swatch-btn" data-color="green" data-hex="#51cf66" style="background:#51cf66;">Green</button>
+            <button type="button" class="swatch-btn" data-color="yellow" data-hex="#ffcb00" style="background:#ffcb00; color:#000;">Yellow</button>
+            <button type="button" class="swatch-btn" data-color="orange" data-hex="#ff9400" style="background:#ff9400;">Orange</button>
+            <button type="button" class="swatch-btn" data-color="red" data-hex="#ff4f5e" style="background:#ff4f5e;">Red</button>
+            <button type="button" class="swatch-btn" data-color="pink" data-hex="#ff4ba0" style="background:#ff4ba0;">Pink</button>
+            <button type="button" class="swatch-btn" data-color="purple" data-hex="#9059ff" style="background:#9059ff;">Purple</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:11px; color:#94a3b8;">Eigener Hex-Code:</span>
+            <input type="color" id="be-picker" value="#37adff" style="width:26px; height:26px; border:none; border-radius:4px; cursor:pointer; background:transparent;">
+            <input type="text" id="be-hex" class="form-input" style="width:90px; font-family:monospace; padding:4px 8px; font-size:11px;" value="#37adff">
+          </div>
+        </div>
+      </div>
+
+      <!-- Option 3: Container-Icon -->
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548;">
+        <label class="check-label" style="margin-bottom:6px;">
+          <input type="checkbox" id="be-apply-icon">
+          <div>
+            <strong style="color:#f8fafc;">3. Container-Icon überschreiben</strong>
+            <span>Weist allen ausgewählten Regeln das gleiche Firefox Container-Icon zu.</span>
+          </div>
+        </label>
+        <div id="be-icon-controls" style="display:none; margin-top:8px;">
+          <select id="be-icon-select" class="form-select">
+            <option value="circle">● Circle (Standard-Kreis)</option>
+            <option value="briefcase">💼 Briefcase (Arbeit)</option>
+            <option value="fingerprint">🔒 Security (Sicherheit)</option>
+            <option value="dollar">💰 Finance (Finanzen)</option>
+            <option value="cart">🛒 Shopping (Einkaufen)</option>
+            <option value="tree">🌲 Dev / Nature (Entwicklung)</option>
+            <option value="chill">☕ Chill (Freizeit)</option>
+            <option value="vacation">🏖️ Vacation (Urlaub)</option>
+            <option value="food">🍔 Food (Essen)</option>
+            <option value="fruit">🍎 Fruit (Obst)</option>
+            <option value="pet">🐾 Pet (Haustier)</option>
+            <option value="gift">🎁 Gift (Geschenk)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Option 4: Tab-Symbol / Emoji -->
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548;">
+        <label class="check-label" style="margin-bottom:6px;">
+          <input type="checkbox" id="be-apply-emoji">
+          <div>
+            <strong style="color:#f8fafc;">4. Tab-Symbol / Emoji anpassen</strong>
+            <span>Zuweisen oder Entfernen von Favicon-/Titel-Symbolen.</span>
+          </div>
+        </label>
+        <div id="be-emoji-controls" style="display:none; margin-top:8px;">
+          <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+            <input type="text" id="be-emoji-input" class="form-input" placeholder="z. B. 📦 oder [API]" maxlength="10" style="flex:1;">
+            <button type="button" id="btn-be-emoji-empty" class="btn btn-secondary" style="font-size:11px; color:#f87171;">Symbole löschen</button>
+          </div>
+          <div id="be-quick-emojis" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+        </div>
+      </div>
+
+      <!-- Option 5: Farbmodus -->
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548;">
+        <label class="form-label" style="font-size:11px; font-weight:700; color:#38bdf8; margin-bottom:6px;">5. Farbmodus anpassen:</label>
+        <select id="be-mode" class="form-select">
+          <option value="keep">-- Keine Änderung (beibehalten) --</option>
+          <option value="container">Nur Container (Empfohlen: Firefox Theme bleibt unverändert)</option>
+          <option value="hybrid">Hybrid (Container + Firefox Fenstertheme)</option>
+        </select>
+      </div>
+
+      <!-- Option 6: 3px Akzentleiste -->
+      <div class="form-group" style="background:#182234; padding:10px 12px; border-radius:8px; border:1px solid #283548; margin-bottom:0;">
+        <label class="form-label" style="font-size:11px; font-weight:700; color:#38bdf8; margin-bottom:6px;">6. 3px Seiten-Akzentleiste:</label>
+        <select id="be-topbar" class="form-select">
+          <option value="keep">-- Keine Änderung (beibehalten) --</option>
+          <option value="enable">Akzentleiste aktivieren (ein)</option>
+          <option value="disable">Akzentleiste deaktivieren (aus)</option>
+        </select>
+      </div>
+
+      <div class="modal-footer">
+        <button id="bulk-edit-cancel" class="btn btn-secondary">Abbrechen</button>
+        <button id="bulk-edit-apply" class="btn btn-primary">✓ Auf ausgewählte Regeln anwenden</button>
+      </div>
+    </div>
+  </div>
+
   <script src="options.js"></script>
 </body>
 </html>`;
@@ -1306,6 +1569,7 @@ async function loadConfig() {
 
   renderDefaultsCard();
   renderRules();
+  initBulkToolbar();
 }
 
 async function saveConfigToStorage() {
@@ -1353,6 +1617,12 @@ function renderDefaultsCard() {
   if (defActiveTheme) defActiveTheme.checked = !!appConfig.enableActiveTabTheme;
   if (defRevertUnmatched) defRevertUnmatched.checked = appConfig.revertUnmatchedToDefault !== false;
   if (defEnableTopbar) defEnableTopbar.checked = appConfig.enablePageTopBar !== false;
+
+  const defOpacity = document.getElementById('def-opacity');
+  const lblOpacityVal = document.getElementById('lbl-opacity-val');
+  const opacityVal = (typeof appConfig.activeTabOpacity === 'number') ? appConfig.activeTabOpacity : 0.35;
+  if (defOpacity) defOpacity.value = String(opacityVal);
+  if (lblOpacityVal) lblOpacityVal.textContent = Math.round(opacityVal * 100) + '%';
 }
 
 // Defaults listeners
@@ -1363,6 +1633,24 @@ document.querySelectorAll('#def-color-grid .swatch-btn').forEach((btn) => {
     appConfig.defaultContainerColor = col;
     appConfig.defaultColor = hex;
     renderDefaultsCard();
+  });
+});
+
+document.getElementById('def-opacity')?.addEventListener('input', (e) => {
+  const val = parseFloat(e.target.value);
+  appConfig.activeTabOpacity = val;
+  const lbl = document.getElementById('lbl-opacity-val');
+  if (lbl) lbl.textContent = Math.round(val * 100) + '%';
+});
+
+document.querySelectorAll('.op-preset-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const val = parseFloat(btn.getAttribute('data-val'));
+    appConfig.activeTabOpacity = val;
+    const defOpacity = document.getElementById('def-opacity');
+    const lbl = document.getElementById('lbl-opacity-val');
+    if (defOpacity) defOpacity.value = String(val);
+    if (lbl) lbl.textContent = Math.round(val * 100) + '%';
   });
 });
 
@@ -1403,6 +1691,8 @@ document.getElementById('btn-save-defaults')?.addEventListener('click', async ()
   if (defActiveTheme) appConfig.enableActiveTabTheme = defActiveTheme.checked;
   if (defRevertUnmatched) appConfig.revertUnmatchedToDefault = defRevertUnmatched.checked;
   if (defEnableTopbar) appConfig.enablePageTopBar = defEnableTopbar.checked;
+  const defOpacity = document.getElementById('def-opacity');
+  if (defOpacity) appConfig.activeTabOpacity = parseFloat(defOpacity.value);
 
   await saveConfigToStorage();
 
@@ -1423,8 +1713,10 @@ document.getElementById('btn-reset-defaults')?.addEventListener('click', async (
 });
 
 // -------------------------------------------------------------
-// Rules Table
+// Rules Table & Bulk Actions
 // -------------------------------------------------------------
+const selectedRuleIds = new Set();
+
 function renderRules() {
   const tbody = document.getElementById('rules-body');
   const countPill = document.getElementById('rules-count-pill');
@@ -1437,18 +1729,42 @@ function renderRules() {
   if (rules.length === 0) {
     const emptyTr = document.createElement('tr');
     const emptyTd = document.createElement('td');
-    emptyTd.colSpan = 8;
+    emptyTd.colSpan = 9;
     emptyTd.style.textAlign = 'center';
     emptyTd.style.padding = '36px';
     emptyTd.style.color = '#64748b';
     emptyTd.textContent = 'Keine Regeln konfiguriert. Klicken Sie auf "+ Neue Regel erstellen", um eine hinzuzufügen.';
     emptyTr.appendChild(emptyTd);
     tbody.appendChild(emptyTr);
+    updateBulkToolbar();
     return;
   }
 
   rules.forEach((rule, idx) => {
     const tr = document.createElement('tr');
+    const isSelected = selectedRuleIds.has(rule.id);
+    if (isSelected) {
+      tr.classList.add('selected-row');
+    }
+
+    // 0. Selection Checkbox
+    const tdCheck = document.createElement('td');
+    tdCheck.style.textAlign = 'center';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = isSelected;
+    chk.addEventListener('click', (e) => e.stopPropagation());
+    chk.addEventListener('change', () => {
+      if (chk.checked) {
+        selectedRuleIds.add(rule.id);
+      } else {
+        selectedRuleIds.delete(rule.id);
+      }
+      updateBulkToolbar();
+      renderRules();
+    });
+    tdCheck.appendChild(chk);
+    tr.appendChild(tdCheck);
 
     // 1. Priority
     const tdPriority = document.createElement('td');
@@ -1553,6 +1869,22 @@ function renderRules() {
     code.className = 'pattern-code';
     code.textContent = rule.pattern || '';
     tdPattern.appendChild(code);
+
+    const dupIdx = (appConfig.rules || []).findIndex(
+      (r, rIdx) => rIdx < idx && r.patternType === rule.patternType && (r.pattern || '').trim().toLowerCase() === (rule.pattern || '').trim().toLowerCase()
+    );
+    if (dupIdx >= 0) {
+      const warn = document.createElement('span');
+      warn.style.marginLeft = '6px';
+      warn.style.fontSize = '10px';
+      warn.style.color = '#f59e0b';
+      warn.style.background = 'rgba(245, 158, 11, 0.15)';
+      warn.style.padding = '1px 5px';
+      warn.style.borderRadius = '3px';
+      warn.textContent = '⚠️ Doppelt (Regel #' + (dupIdx + 1) + ' greift zuerst)';
+      warn.title = 'Regel #' + (dupIdx + 1) + ' hat Vorrang, da sie weiter oben steht.';
+      tdPattern.appendChild(warn);
+    }
     tr.appendChild(tdPattern);
 
     // 6. Container
@@ -1590,6 +1922,22 @@ function renderRules() {
     editBtn.addEventListener('click', () => openRuleModal(idx));
     tdAction.appendChild(editBtn);
 
+    const dupBtn = document.createElement('button');
+    dupBtn.className = 'priority-btn';
+    dupBtn.textContent = '📋';
+    dupBtn.title = 'Regel als Vorlage duplizieren';
+    dupBtn.addEventListener('click', async () => {
+      const copy = JSON.parse(JSON.stringify(rule));
+      copy.id = 'rule-' + Date.now();
+      copy.name = (rule.name || rule.pattern) + ' (Kopie)';
+      copy.priority = (appConfig.rules || []).length + 1;
+      appConfig.rules.push(copy);
+      await saveConfigToStorage();
+      renderRules();
+      openRuleModal(appConfig.rules.length - 1);
+    });
+    tdAction.appendChild(dupBtn);
+
     const delBtn = document.createElement('button');
     delBtn.className = 'del-btn';
     delBtn.textContent = 'Löschen';
@@ -1597,6 +1945,7 @@ function renderRules() {
       if (confirm('Regel "' + (rule.name || rule.pattern) + '" wirklich löschen?')) {
         appConfig.rules.splice(idx, 1);
         appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        selectedRuleIds.delete(rule.id);
         await saveConfigToStorage();
         renderRules();
       }
@@ -1605,6 +1954,594 @@ function renderRules() {
 
     tr.appendChild(tdAction);
     tbody.appendChild(tr);
+  });
+
+  updateBulkToolbar();
+}
+
+function updateBulkToolbar() {
+  const card = document.getElementById('card-bulk');
+  const countBadge = document.getElementById('bulk-count-badge');
+  const statsText = document.getElementById('bulk-stats-text');
+  const exportCount = document.getElementById('bulk-export-count');
+  const deleteCount = document.getElementById('bulk-delete-count');
+  const masterChk = document.getElementById('chk-all-rules');
+  const hint = document.getElementById('bulk-hint');
+  const openModalBtn = document.getElementById('btn-open-bulk-edit');
+  if (!card) return;
+
+  const count = selectedRuleIds.size;
+  const rules = appConfig.rules || [];
+
+  if (masterChk) {
+    if (rules.length === 0 || count === 0) {
+      masterChk.checked = false;
+      masterChk.indeterminate = false;
+    } else if (count === rules.length) {
+      masterChk.checked = true;
+      masterChk.indeterminate = false;
+    } else {
+      masterChk.checked = false;
+      masterChk.indeterminate = true;
+    }
+  }
+
+  if (countBadge) {
+    countBadge.textContent = count + ' von ' + rules.length + ' ' + (count === 1 ? 'Regel ausgewählt' : 'Regeln ausgewählt');
+    countBadge.style.background = count > 0 ? '#0284c7' : '#334155';
+  }
+  if (exportCount) exportCount.textContent = String(count);
+  if (deleteCount) deleteCount.textContent = String(count);
+  if (openModalBtn) {
+    openModalBtn.textContent = count > 0 ? '✏️ Massenbearbeitung (' + count + ')...' : '✏️ Massenbearbeitung...';
+  }
+
+  let activeCount = 0;
+  rules.forEach((r) => {
+    if (selectedRuleIds.has(r.id) && r.enabled) activeCount++;
+  });
+  const inactiveCount = count - activeCount;
+  if (statsText) {
+    statsText.textContent = activeCount + ' aktiv · ' + inactiveCount + ' inaktiv';
+  }
+
+  if (hint) {
+    if (count > 0) {
+      hint.innerHTML = '<span style="color:#38bdf8; font-weight:700;">✓ ' + count + ' ' + (count === 1 ? 'Regel ausgewählt.' : 'Regeln ausgewählt.') + '</span> Klicken Sie auf <strong>"Massenbearbeitung"</strong>, <strong>"Farb-Sync"</strong> oder eine der Schnellaktionen oben.';
+    } else {
+      hint.textContent = '💡 Markieren Sie Regeln in der Tabelle über die Checkboxen links für gemeinsame Massenbearbeitung, Status-Änderungen oder Farb-Sync.';
+    }
+  }
+}
+
+function closeBulkPopovers() {
+  const cPop = document.getElementById('bulk-color-popover');
+  const iPop = document.getElementById('bulk-icon-popover');
+  if (cPop) cPop.style.display = 'none';
+  if (iPop) iPop.style.display = 'none';
+}
+
+const BULK_CONTAINER_COLORS = [
+  { id: 'blue', name: 'Blau', hex: '#37adff' },
+  { id: 'turquoise', name: 'Türkis', hex: '#00c79a' },
+  { id: 'green', name: 'Grün', hex: '#51cf66' },
+  { id: 'yellow', name: 'Gelb', hex: '#ffcb00' },
+  { id: 'orange', name: 'Orange', hex: '#ff9400' },
+  { id: 'red', name: 'Rot', hex: '#ff4f5e' },
+  { id: 'pink', name: 'Pink', hex: '#ff4ba0' },
+  { id: 'purple', name: 'Lila', hex: '#9059ff' },
+];
+
+const BULK_CONTAINER_ICONS = [
+  { id: 'circle', sym: '●', label: 'Circle' },
+  { id: 'briefcase', sym: '💼', label: 'Briefcase' },
+  { id: 'fingerprint', sym: '🔒', label: 'Security' },
+  { id: 'dollar', sym: '💰', label: 'Finance' },
+  { id: 'cart', sym: '🛒', label: 'Shopping' },
+  { id: 'tree', sym: '🌲', label: 'Dev' },
+  { id: 'chill', sym: '☕', label: 'Chill' },
+  { id: 'vacation', sym: '🏖️', label: 'Vacation' },
+  { id: 'food', sym: '🍔', label: 'Food' },
+  { id: 'fruit', sym: '🍎', label: 'Fruit' },
+  { id: 'pet', sym: '🐾', label: 'Pet' },
+  { id: 'gift', sym: '🎁', label: 'Gift' }
+];
+
+const BULK_QUICK_EMOJIS = ['📦', '⚡', '🚀', '🔒', '🌐', '🧪', '🛒', '💼', '🛠️', '🎯', '⭐', '🔥'];
+
+let selectedBulkModalColor = 'blue';
+let selectedBulkModalHex = '#37adff';
+
+function openBulkEditModal() {
+  const rules = appConfig.rules || [];
+  if (selectedRuleIds.size === 0) {
+    if (rules.length === 0) {
+      alert('Es sind noch keine Regeln vorhanden, die bearbeitet werden könnten.');
+      return;
+    }
+    // Automatically select all rules if none were explicitly checked
+    rules.forEach((r) => selectedRuleIds.add(r.id));
+    updateBulkToolbar();
+    renderRules();
+  }
+
+  const count = selectedRuleIds.size;
+  const overlay = document.getElementById('bulk-edit-modal-overlay');
+  const title = document.getElementById('bulk-edit-title');
+  if (title) {
+    title.textContent = '✏️ Massenbearbeitung (' + count + ' ' + (count === 1 ? 'Regel' : 'Regeln') + ')';
+  }
+
+  // Reset form controls
+  const statusSel = document.getElementById('be-status');
+  if (statusSel) statusSel.value = 'keep';
+  const modeSel = document.getElementById('be-mode');
+  if (modeSel) modeSel.value = 'keep';
+  const topbarSel = document.getElementById('be-topbar');
+  if (topbarSel) topbarSel.value = 'keep';
+
+  const chkColor = document.getElementById('be-apply-color');
+  if (chkColor) chkColor.checked = false;
+  const colCtrl = document.getElementById('be-color-controls');
+  if (colCtrl) colCtrl.style.display = 'none';
+
+  const chkIcon = document.getElementById('be-apply-icon');
+  if (chkIcon) chkIcon.checked = false;
+  const iconCtrl = document.getElementById('be-icon-controls');
+  if (iconCtrl) iconCtrl.style.display = 'none';
+
+  const chkEmoji = document.getElementById('be-apply-emoji');
+  if (chkEmoji) chkEmoji.checked = false;
+  const emojiCtrl = document.getElementById('be-emoji-controls');
+  if (emojiCtrl) emojiCtrl.style.display = 'none';
+  const emojiInp = document.getElementById('be-emoji-input');
+  if (emojiInp) emojiInp.value = '';
+
+  overlay?.classList.add('active');
+}
+
+function closeBulkEditModal() {
+  document.getElementById('bulk-edit-modal-overlay')?.classList.remove('active');
+}
+
+let isBulkToolbarInitialized = false;
+
+function initBulkToolbar() {
+  if (isBulkToolbarInitialized) return;
+  isBulkToolbarInitialized = true;
+
+  // Swatch list in Farb-Sync dropdown
+  const swatchList = document.getElementById('bulk-swatch-list');
+  if (swatchList && swatchList.children.length === 0) {
+    BULK_CONTAINER_COLORS.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-secondary';
+      btn.style.fontSize = '11px';
+      btn.style.padding = '5px 8px';
+      btn.style.display = 'flex';
+      btn.style.alignItems = 'center';
+      btn.style.gap = '6px';
+      btn.style.justifyContent = 'flex-start';
+
+      const dot = document.createElement('span');
+      dot.style.width = '12px';
+      dot.style.height = '12px';
+      dot.style.borderRadius = '50%';
+      dot.style.backgroundColor = opt.hex;
+      dot.style.flexShrink = '0';
+      btn.appendChild(dot);
+      btn.appendChild(document.createTextNode(opt.name));
+
+      btn.addEventListener('click', async () => {
+        if (selectedRuleIds.size === 0) {
+          (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+        }
+        (appConfig.rules || []).forEach((r) => {
+          if (selectedRuleIds.has(r.id)) {
+            r.color = opt.hex;
+            r.firefoxContainerColor = opt.id;
+          }
+        });
+        await saveConfigToStorage();
+        closeBulkPopovers();
+        renderRules();
+      });
+      swatchList.appendChild(btn);
+    });
+  }
+
+  // Icon list in Icon-Sync dropdown
+  const iconList = document.getElementById('bulk-icon-list');
+  if (iconList && iconList.children.length === 0) {
+    BULK_CONTAINER_ICONS.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'icon-btn';
+      btn.style.padding = '4px 2px';
+      btn.title = opt.label;
+
+      const sym = document.createElement('span');
+      sym.className = 'icon-sym';
+      sym.textContent = opt.sym;
+      btn.appendChild(sym);
+
+      const lbl = document.createElement('span');
+      lbl.className = 'icon-lbl';
+      lbl.textContent = opt.label;
+      btn.appendChild(lbl);
+
+      btn.addEventListener('click', async () => {
+        if (selectedRuleIds.size === 0) {
+          (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+        }
+        (appConfig.rules || []).forEach((r) => {
+          if (selectedRuleIds.has(r.id)) {
+            r.firefoxContainerIcon = opt.id;
+          }
+        });
+        await saveConfigToStorage();
+        closeBulkPopovers();
+        renderRules();
+      });
+      iconList.appendChild(btn);
+    });
+  }
+
+  // Emoji list in Icon-Sync dropdown
+  const emojiList = document.getElementById('bulk-emoji-quick-list');
+  if (emojiList && emojiList.children.length === 0) {
+    BULK_QUICK_EMOJIS.forEach((em) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-secondary';
+      btn.style.padding = '3px 6px';
+      btn.style.fontSize = '13px';
+      btn.textContent = em;
+      btn.addEventListener('click', async () => {
+        if (selectedRuleIds.size === 0) {
+          (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+        }
+        (appConfig.rules || []).forEach((r) => {
+          if (selectedRuleIds.has(r.id)) {
+            let clean = r.containerName || '';
+            if (r.customEmoji && clean.startsWith(r.customEmoji)) {
+              clean = clean.slice(r.customEmoji.length).trim();
+            }
+            r.customEmoji = em;
+            r.containerName = em + ' ' + clean;
+          }
+        });
+        await saveConfigToStorage();
+        closeBulkPopovers();
+        renderRules();
+      });
+      emojiList.appendChild(btn);
+    });
+  }
+
+  // Quick emojis in Bulk Edit Modal
+  const beEmojiList = document.getElementById('be-quick-emojis');
+  if (beEmojiList && beEmojiList.children.length === 0) {
+    BULK_QUICK_EMOJIS.forEach((em) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-secondary';
+      btn.style.padding = '3px 6px';
+      btn.style.fontSize = '13px';
+      btn.textContent = em;
+      btn.addEventListener('click', () => {
+        const inp = document.getElementById('be-emoji-input');
+        if (inp) inp.value = em;
+      });
+      beEmojiList.appendChild(btn);
+    });
+  }
+
+  // Swatch grid in Bulk Edit Modal
+  document.querySelectorAll('#be-color-grid .swatch-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#be-color-grid .swatch-btn').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedBulkModalColor = btn.getAttribute('data-color') || 'blue';
+      selectedBulkModalHex = btn.getAttribute('data-hex') || '#37adff';
+      const beHex = document.getElementById('be-hex');
+      const bePicker = document.getElementById('be-picker');
+      if (beHex) beHex.value = selectedBulkModalHex;
+      if (bePicker) bePicker.value = selectedBulkModalHex;
+    });
+  });
+
+  const bePicker = document.getElementById('be-picker');
+  const beHex = document.getElementById('be-hex');
+  if (bePicker && beHex) {
+    bePicker.addEventListener('input', () => {
+      beHex.value = bePicker.value;
+      selectedBulkModalHex = bePicker.value;
+    });
+    beHex.addEventListener('input', () => {
+      if (/^#[0-9A-Fa-f]{6}$/.test(beHex.value)) {
+        bePicker.value = beHex.value;
+        selectedBulkModalHex = beHex.value;
+      }
+    });
+  }
+
+  // Toggle controls inside Bulk Edit Modal
+  document.getElementById('be-apply-color')?.addEventListener('change', (e) => {
+    const el = document.getElementById('be-color-controls');
+    if (el) el.style.display = e.target.checked ? 'block' : 'none';
+  });
+  document.getElementById('be-apply-icon')?.addEventListener('change', (e) => {
+    const el = document.getElementById('be-icon-controls');
+    if (el) el.style.display = e.target.checked ? 'block' : 'none';
+  });
+  document.getElementById('be-apply-emoji')?.addEventListener('change', (e) => {
+    const el = document.getElementById('be-emoji-controls');
+    if (el) el.style.display = e.target.checked ? 'block' : 'none';
+  });
+  document.getElementById('btn-be-emoji-empty')?.addEventListener('click', () => {
+    const inp = document.getElementById('be-emoji-input');
+    if (inp) inp.value = '';
+  });
+
+  // Open & Close Bulk Edit Modal
+  document.getElementById('btn-open-bulk-edit')?.addEventListener('click', openBulkEditModal);
+  document.getElementById('btn-quick-bulk')?.addEventListener('click', openBulkEditModal);
+  document.getElementById('bulk-edit-close')?.addEventListener('click', closeBulkEditModal);
+  document.getElementById('bulk-edit-cancel')?.addEventListener('click', closeBulkEditModal);
+
+  // Apply Bulk Edit Modal changes
+  document.getElementById('bulk-edit-apply')?.addEventListener('click', async () => {
+    const count = selectedRuleIds.size;
+    if (count === 0) {
+      alert('Keine Regeln ausgewählt.');
+      return;
+    }
+
+    const beStatus = document.getElementById('be-status')?.value;
+    const applyColor = document.getElementById('be-apply-color')?.checked;
+    const applyIcon = document.getElementById('be-apply-icon')?.checked;
+    const applyEmoji = document.getElementById('be-apply-emoji')?.checked;
+    const beMode = document.getElementById('be-mode')?.value;
+    const beTopbar = document.getElementById('be-topbar')?.value;
+
+    const newColorHex = document.getElementById('be-hex')?.value || selectedBulkModalHex || '#37adff';
+    const newColorId = selectedBulkModalColor || 'blue';
+    const newIconId = document.getElementById('be-icon-select')?.value || 'circle';
+    const newEmoji = (document.getElementById('be-emoji-input')?.value || '').trim();
+
+    (appConfig.rules || []).forEach((r) => {
+      if (selectedRuleIds.has(r.id)) {
+        if (beStatus === 'enable') r.enabled = true;
+        if (beStatus === 'disable') r.enabled = false;
+        if (beStatus === 'toggle') r.enabled = !r.enabled;
+
+        if (applyColor) {
+          r.color = newColorHex;
+          r.firefoxContainerColor = newColorId;
+        }
+
+        if (applyIcon) {
+          r.firefoxContainerIcon = newIconId;
+        }
+
+        if (applyEmoji) {
+          let clean = r.containerName || '';
+          if (r.customEmoji && clean.startsWith(r.customEmoji)) {
+            clean = clean.slice(r.customEmoji.length).trim();
+          }
+          r.customEmoji = newEmoji;
+          r.containerName = newEmoji ? newEmoji + ' ' + clean : clean;
+        }
+
+        if (beMode && beMode !== 'keep') {
+          r.colorMode = beMode;
+        }
+
+        if (beTopbar && beTopbar !== 'keep') {
+          r.accentBorder = beTopbar === 'enable';
+        }
+      }
+    });
+
+    await saveConfigToStorage();
+    closeBulkEditModal();
+    renderRules();
+    alert('✓ Massenbearbeitung erfolgreich auf ' + count + ' ' + (count === 1 ? 'Regel' : 'Regeln') + ' angewendet!');
+  });
+
+  // Farb-Sync dropdown toggle
+  document.getElementById('btn-bulk-colorsync-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cPop = document.getElementById('bulk-color-popover');
+    const iPop = document.getElementById('bulk-icon-popover');
+    if (iPop) iPop.style.display = 'none';
+    if (cPop) {
+      cPop.style.display = cPop.style.display === 'block' ? 'none' : 'block';
+    }
+  });
+
+  // Icon-Sync dropdown toggle
+  document.getElementById('btn-bulk-iconsync-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cPop = document.getElementById('bulk-color-popover');
+    const iPop = document.getElementById('bulk-icon-popover');
+    if (cPop) cPop.style.display = 'none';
+    if (iPop) {
+      iPop.style.display = iPop.style.display === 'block' ? 'none' : 'block';
+    }
+  });
+
+  const cInp = document.getElementById('bulk-color-input');
+  const hInp = document.getElementById('bulk-hex-input');
+  if (cInp && hInp) {
+    cInp.addEventListener('input', () => { hInp.value = cInp.value; });
+    hInp.addEventListener('input', () => { if (/^#[0-9A-Fa-f]{6}$/.test(hInp.value)) cInp.value = hInp.value; });
+  }
+
+  document.getElementById('btn-bulk-hex-apply')?.addEventListener('click', async () => {
+    const hex = document.getElementById('bulk-hex-input')?.value || '#37adff';
+    if (selectedRuleIds.size === 0) {
+      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    }
+    (appConfig.rules || []).forEach((r) => {
+      if (selectedRuleIds.has(r.id)) {
+        r.color = hex;
+      }
+    });
+    await saveConfigToStorage();
+    closeBulkPopovers();
+    renderRules();
+  });
+
+  document.getElementById('btn-bulk-emoji-apply')?.addEventListener('click', async () => {
+    const em = (document.getElementById('bulk-emoji-input')?.value || '').trim();
+    if (!em) return;
+    if (selectedRuleIds.size === 0) {
+      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    }
+    (appConfig.rules || []).forEach((r) => {
+      if (selectedRuleIds.has(r.id)) {
+        let clean = r.containerName || '';
+        if (r.customEmoji && clean.startsWith(r.customEmoji)) {
+          clean = clean.slice(r.customEmoji.length).trim();
+        }
+        r.customEmoji = em;
+        r.containerName = em + ' ' + clean;
+      }
+    });
+    await saveConfigToStorage();
+    closeBulkPopovers();
+    renderRules();
+  });
+
+  document.getElementById('btn-bulk-emoji-clear')?.addEventListener('click', async () => {
+    if (selectedRuleIds.size === 0) {
+      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    }
+    (appConfig.rules || []).forEach((r) => {
+      if (selectedRuleIds.has(r.id)) {
+        let clean = r.containerName || '';
+        if (r.customEmoji && clean.startsWith(r.customEmoji)) {
+          clean = clean.slice(r.customEmoji.length).trim();
+        }
+        r.customEmoji = '';
+        r.containerName = clean;
+      }
+    });
+    await saveConfigToStorage();
+    closeBulkPopovers();
+    renderRules();
+  });
+
+  // Master Checkbox
+  document.getElementById('chk-all-rules')?.addEventListener('change', () => {
+    const rules = appConfig.rules || [];
+    if (selectedRuleIds.size === rules.length) {
+      selectedRuleIds.clear();
+    } else {
+      rules.forEach((r) => selectedRuleIds.add(r.id));
+    }
+    updateBulkToolbar();
+    renderRules();
+  });
+
+  // Select all & clear buttons
+  document.getElementById('btn-bulk-select-all')?.addEventListener('click', () => {
+    (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    updateBulkToolbar();
+    renderRules();
+  });
+
+  document.getElementById('btn-bulk-clear')?.addEventListener('click', () => {
+    selectedRuleIds.clear();
+    updateBulkToolbar();
+    renderRules();
+  });
+
+  // Enable / Disable / Toggle buttons
+  document.getElementById('btn-bulk-enable')?.addEventListener('click', async () => {
+    if (selectedRuleIds.size === 0) {
+      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    }
+    (appConfig.rules || []).forEach((r) => {
+      if (selectedRuleIds.has(r.id)) r.enabled = true;
+    });
+    await saveConfigToStorage();
+    renderRules();
+  });
+
+  document.getElementById('btn-bulk-disable')?.addEventListener('click', async () => {
+    if (selectedRuleIds.size === 0) {
+      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    }
+    (appConfig.rules || []).forEach((r) => {
+      if (selectedRuleIds.has(r.id)) r.enabled = false;
+    });
+    await saveConfigToStorage();
+    renderRules();
+  });
+
+  document.getElementById('btn-bulk-toggle')?.addEventListener('click', async () => {
+    if (selectedRuleIds.size === 0) {
+      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+    }
+    (appConfig.rules || []).forEach((r) => {
+      if (selectedRuleIds.has(r.id)) r.enabled = !r.enabled;
+    });
+    await saveConfigToStorage();
+    renderRules();
+  });
+
+  // Bulk Delete
+  document.getElementById('btn-bulk-delete')?.addEventListener('click', async () => {
+    const count = selectedRuleIds.size;
+    if (count === 0) {
+      alert('Bitte markieren Sie zuerst mindestens eine Regel zum Löschen.');
+      return;
+    }
+    if (confirm('Möchten Sie alle ' + count + ' ausgewählten Regeln wirklich löschen?')) {
+      appConfig.rules = (appConfig.rules || []).filter((r) => !selectedRuleIds.has(r.id));
+      appConfig.rules.forEach((r, i) => r.priority = i + 1);
+      selectedRuleIds.clear();
+      await saveConfigToStorage();
+      renderRules();
+    }
+  });
+
+  // Bulk Export
+  document.getElementById('btn-bulk-export')?.addEventListener('click', () => {
+    const selectedRules = (appConfig.rules || []).filter((r) => selectedRuleIds.has(r.id));
+    if (selectedRules.length === 0) {
+      alert('Bitte markieren Sie mindestens eine Regel für den Export.');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(selectedRules, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'tabchroma-rules-selected-' + selectedRules.length + '.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  });
+
+  // Close popovers on click outside
+  window.addEventListener('click', (e) => {
+    const cPop = document.getElementById('bulk-color-popover');
+    const iPop = document.getElementById('bulk-icon-popover');
+    const cBtn = document.getElementById('btn-bulk-colorsync-toggle');
+    const iBtn = document.getElementById('btn-bulk-iconsync-toggle');
+    if (cPop && cPop.style.display === 'block') {
+      if (!cPop.contains(e.target) && !cBtn?.contains(e.target)) {
+        cPop.style.display = 'none';
+      }
+    }
+    if (iPop && iPop.style.display === 'block') {
+      if (!iPop.contains(e.target) && !iBtn?.contains(e.target)) {
+        iPop.style.display = 'none';
+      }
+    }
   });
 }
 
@@ -2164,7 +3101,10 @@ document.getElementById('btn-export')?.addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 });
 
-document.addEventListener('DOMContentLoaded', loadConfig);
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadConfig();
+  initBulkToolbar();
+});
 `;
 
   files.push({

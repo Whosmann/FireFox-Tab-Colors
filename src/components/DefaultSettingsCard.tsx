@@ -1,7 +1,8 @@
-import React from 'react';
-import { Palette, Shield, Settings2, RotateCcw, Sparkles, Check, Info } from 'lucide-react';
+import React, { useState } from 'react';
+import { Palette, Shield, Settings2, RotateCcw, Sparkles, Check, Info, Sliders, Layers } from 'lucide-react';
 import { ExtensionConfig, FirefoxContainerColor, ColorMode } from '../types/extension';
-import { FIREFOX_CONTAINER_COLORS } from '../utils/urlMatcher';
+import { FIREFOX_CONTAINER_COLORS, hexToRgba } from '../utils/urlMatcher';
+import { ChromaTestLogo, LogoVariant } from './ChromaTestLogo';
 
 interface DefaultSettingsCardProps {
   config: ExtensionConfig;
@@ -14,6 +15,8 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
   onChangeConfig,
   onResetToDummyDefaults,
 }) => {
+  const [testLogoVariant, setTestLogoVariant] = useState<LogoVariant>('layers');
+  const [testLogoColor, setTestLogoColor] = useState<string>('#ff4f5e');
   const containerColors: FirefoxContainerColor[] = [
     'blue',
     'turquoise',
@@ -194,6 +197,203 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
                 </span>
               </div>
             </label>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Deckkraft des aktiven Tabs & Favicon-Kontrast (Löst verschwommene Icons) */}
+      <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-sky-600" />
+              <span className="text-xs font-bold text-slate-800">
+                Deckkraft des aktiven Tabs &amp; Favicon-Erkennbarkeit
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">
+                {Math.round((config.activeTabOpacity ?? 0.35) * 100)}% Deckkraft
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Verhindert, dass Favicons mit gleicher Farbe wie der Tab (z. B. rotes Symbol auf rotem Tab) unsichtbar werden.
+            </p>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { val: 0.25, label: '25% Dezent' },
+              { val: 0.35, label: '35% Empfohlen' },
+              { val: 0.50, label: '50% Ausgewogen' },
+              { val: 0.75, label: '75% Kräftig' },
+              { val: 1.00, label: '100% Vollflächig' },
+            ].map(({ val, label }) => {
+              const isSelected = Math.abs((config.activeTabOpacity ?? 0.35) - val) < 0.05;
+              return (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => onChangeConfig({ activeTabOpacity: val })}
+                  className={`px-2 py-1 text-[11px] font-medium rounded-md border transition-all ${
+                    isSelected
+                      ? 'border-sky-500 bg-sky-50 text-sky-800 font-bold shadow-2xs'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Slider & Live Before/After Comparison */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pt-1">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-slate-600">
+              <span>Transparenter / Höchster Kontrast (15%)</span>
+              <span>Vollflächig (100%)</span>
+            </div>
+            <input
+              type="range"
+              min="0.15"
+              max="1.0"
+              step="0.05"
+              value={config.activeTabOpacity ?? 0.35}
+              onChange={(e) => onChangeConfig({ activeTabOpacity: parseFloat(e.target.value) })}
+              className="w-full accent-sky-600 cursor-pointer"
+            />
+            
+            <label className="flex items-start gap-2.5 cursor-pointer pt-2">
+              <input
+                type="checkbox"
+                checked={config.enableFaviconContrastHalo !== false}
+                onChange={(e) => onChangeConfig({ enableFaviconContrastHalo: e.target.checked })}
+                className="mt-0.5 rounded text-sky-600 focus:ring-sky-500"
+              />
+              <div>
+                <span className="font-semibold text-xs text-slate-800 block">
+                  Automatischer Favicon-Kontrast-Schutz (Halo-Kontur)
+                </span>
+                <span className="text-[11px] text-slate-500 block leading-snug">
+                  Legt einen subtilen Licht-/Schatten-Schutzrand um Website-Favicons, damit Konturen auch bei identischer Farbe messerscharf bleiben.
+                </span>
+              </div>
+            </label>
+          </div>
+
+          {/* Visual comparison reproducing the user's exact scenario with custom test logo */}
+          <div className="bg-[#181825] p-3 rounded-lg border border-slate-700/60 text-xs text-white space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2 text-[11px] border-b border-slate-700/50 pb-2">
+              <span className="font-bold text-slate-300">
+                Eigenes Logo für Gleichfarbigkeits-Test:
+              </span>
+              
+              {/* Select Logo Variant & Color */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setTestLogoVariant('layers')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                      testLogoVariant === 'layers' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Schichten
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTestLogoVariant('prism')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                      testLogoVariant === 'prism' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Prisma
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTestLogoVariant('hexagon')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                      testLogoVariant === 'hexagon' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Hexagon
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {[
+                    { hex: '#ff4f5e', name: 'Rot' },
+                    { hex: '#37adff', name: 'Blau' },
+                    { hex: '#51cf66', name: 'Grün' },
+                    { hex: '#ff9400', name: 'Orange' },
+                  ].map(({ hex, name }) => (
+                    <button
+                      key={hex}
+                      type="button"
+                      onClick={() => setTestLogoColor(hex)}
+                      className={`w-4 h-4 rounded-full border transition-all ${
+                        testLogoColor === hex ? 'ring-2 ring-white scale-110' : 'border-black/30 opacity-70 hover:opacity-100'
+                      }`}
+                      style={{ backgroundColor: hex }}
+                      title={name}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Bad example: 100% opacity */}
+              <div className="flex flex-col items-center gap-1 shrink-0">
+                <div 
+                  className="relative w-14 h-12 rounded-t-lg border-t-2 flex items-center justify-center shadow-xs"
+                  style={{
+                    backgroundColor: testLogoColor,
+                    borderTopColor: testLogoColor,
+                  }}
+                >
+                  {/* Test logo on solid identical color (barely visible) */}
+                  <ChromaTestLogo 
+                    color={testLogoColor} 
+                    size={20} 
+                    variant={testLogoVariant} 
+                    withHalo={false} 
+                  />
+                </div>
+                <span className="text-[10px] text-rose-400 font-semibold text-center whitespace-nowrap">
+                  100% (Verschwimmt)
+                </span>
+              </div>
+
+              <div className="text-slate-500 font-bold text-sm shrink-0">→</div>
+
+              {/* Good example: Selected opacity with halo */}
+              <div className="flex flex-col items-center gap-1 shrink-0">
+                <div 
+                  className="relative w-14 h-12 rounded-t-lg border-t-2 flex items-center justify-center transition-all shadow-xs"
+                  style={{
+                    backgroundColor: hexToRgba(testLogoColor, config.activeTabOpacity ?? 0.35),
+                    borderTopColor: testLogoColor,
+                  }}
+                >
+                  {/* Test logo on translucent background with contrast halo */}
+                  <ChromaTestLogo 
+                    color={testLogoColor} 
+                    size={20} 
+                    variant={testLogoVariant} 
+                    withHalo={config.enableFaviconContrastHalo !== false} 
+                  />
+                </div>
+                <span className="text-[10px] text-emerald-400 font-semibold text-center whitespace-nowrap">
+                  {Math.round((config.activeTabOpacity ?? 0.35) * 100)}% (Klar erkennbar!)
+                </span>
+              </div>
+
+              <div className="flex-1 text-[11px] text-slate-400 pl-2 border-l border-slate-700/60 leading-snug">
+                Das Logo und der Tab haben exakt dieselbe Farbe (<code className="font-mono text-slate-200">{testLogoColor}</code>). Dank reduzierter Deckkraft schimmert der dunkle Firefox-Hintergrund sanft durch und das Symbol hebt sich gestochen scharf ab!
+              </div>
+            </div>
           </div>
         </div>
       </div>

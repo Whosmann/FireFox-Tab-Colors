@@ -217,3 +217,22 @@ export function findClosestContainerColor(hex: string): FirefoxContainerColor {
 
   return closest;
 }
+
+/**
+ * Converts a hex color string (#RRGGBB or #RGB) and opacity (0 to 1) into an rgba(...) string.
+ */
+export function hexToRgba(hex: string, alpha: number = 1): string {
+  if (!hex) return `rgba(55, 173, 255, ${alpha})`;
+  let clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean.split('').map((c) => c + c).join('');
+  }
+  if (clean.length >= 6) {
+    const r = parseInt(clean.substring(0, 2), 16) || 0;
+    const g = parseInt(clean.substring(2, 4), 16) || 0;
+    const b = parseInt(clean.substring(4, 6), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+  }
+  return hex;
+}
+

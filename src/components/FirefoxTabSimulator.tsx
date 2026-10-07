@@ -23,13 +23,18 @@ import {
   Edit3
 } from 'lucide-react';
 import { TabColorRule, TabSimulatorItem } from '../types/extension';
-import { matchUrlAgainstRules } from '../utils/urlMatcher';
+import { matchUrlAgainstRules, hexToRgba } from '../utils/urlMatcher';
+import { ChromaTestLogo } from './ChromaTestLogo';
 
 interface FirefoxTabSimulatorProps {
   rules: TabColorRule[];
   onAddRuleClick?: () => void;
   onUpdateRule?: (rule: TabColorRule) => void;
   onEditRule?: (rule: TabColorRule) => void;
+  activeTabOpacity?: number;
+  enableFaviconContrastHalo?: boolean;
+  onChangeOpacity?: (opacity: number) => void;
+  onToggleHalo?: (enabled: boolean) => void;
 }
 
 export interface ExampleScenario {
@@ -92,6 +97,13 @@ export const EXAMPLE_TAB_SCENARIOS: ExampleScenario[] = [
         title: 'Wikipedia - Freier Standard-Tab',
         url: 'https://de.wikipedia.org/wiki/Firefox',
         favicon: '📰',
+        matchedRuleId: null,
+      },
+      {
+        id: 'tab-chromastack',
+        title: 'chromastack.internal (Gleichfarbiges Logo-Test)',
+        url: 'https://chromastack.internal/dashboard',
+        favicon: 'layers-logo',
         matchedRuleId: null,
       },
     ],
@@ -165,7 +177,11 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
   rules, 
   onAddRuleClick,
   onUpdateRule,
-  onEditRule
+  onEditRule,
+  activeTabOpacity = 0.35,
+  enableFaviconContrastHalo = true,
+  onChangeOpacity,
+  onToggleHalo,
 }) => {
   const [tabs, setTabs] = useState<TabSimulatorItem[]>(EXAMPLE_TAB_SCENARIOS[0].tabs);
   const [activeTabId, setActiveTabId] = useState<string>('tab-1');
@@ -441,6 +457,38 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
           </div>
         </div>
       );
+    } else if (url.includes('chromastack')) {
+      specificContent = (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-700/50">
+            <div className="flex items-center gap-2.5">
+              <ChromaTestLogo color="#ff4f5e" size={26} variant="layers" withHalo />
+              <div>
+                <h4 className="font-bold text-sm text-rose-300">
+                  ChromaStack · Gleichfarbigkeits-Testlabor
+                </h4>
+                <div className="text-[11px] text-slate-400">
+                  Gleichfarbiges Logo-Szenario wie in Ihrem Foto
+                </div>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+              Logo = Tab-Farbe (#ff4f5e)
+            </span>
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-black/30 border border-slate-700/60 text-xs text-slate-300 space-y-2">
+            <div className="font-bold text-slate-200 flex items-center gap-2">
+              <span>🔍 Sichtbarkeits-Ergebnis:</span>
+              <span className="text-emerald-400 text-[11px]">Gestochen scharf</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Dieses Test-Logo besitzt exakt denselben roten Farbcode (<code className="text-rose-300 font-mono">#ff4f5e</code>) wie die zugeordnete Firefox-Farbregel. 
+              Beachten Sie oben den aktiven Tab: Dank der reduzierten Deckkraft ({Math.round((activeTabOpacity ?? 0.35) * 100)}%) und der Kontur-Hinterlegung verschwimmt das Symbol nicht mehr im Hintergrund, sondern bleibt optimal differenziert!
+            </p>
+          </div>
+        </div>
+      );
     } else if (url.includes('internal-cloud.net')) {
       const isExactHost = url.includes('248924.4.internal-cloud.net');
       const isAuth = url.includes('auth.internal-cloud.net');
@@ -663,6 +711,26 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
             </button>
           </div>
 
+          {/* Active Tab Opacity Control */}
+          {onChangeOpacity && (
+            <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
+              <span className="text-[11px] font-semibold text-slate-600">Tab-Deckkraft:</span>
+              <input 
+                type="range"
+                min="0.15"
+                max="1.0"
+                step="0.05"
+                value={activeTabOpacity ?? 0.35}
+                onChange={(e) => onChangeOpacity(parseFloat(e.target.value))}
+                className="w-16 accent-sky-600 cursor-pointer h-1.5"
+                title="Deckkraft des aktiven Tabs anpassen (z. B. 35% für optimalen Favicon-Kontrast)"
+              />
+              <span className="font-mono text-[11px] font-bold text-sky-700 min-w-[28px]">
+                {Math.round((activeTabOpacity ?? 0.35) * 100)}%
+              </span>
+            </div>
+          )}
+
           {/* Regenerate Sample Tabs Button */}
           <button
             onClick={() => handleLoadScenario('standard')}
@@ -730,6 +798,14 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
           >
             + Unmatched
           </button>
+          <button
+            onClick={() => handleQuickAdd('https://chromastack.internal/dashboard', 'chromastack.internal', 'layers-logo')}
+            className="px-2 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 text-xs font-semibold whitespace-nowrap shadow-2xs flex items-center gap-1"
+            title="Testet ein rotes Logo auf einem gleichfarbig roten Tab"
+          >
+            <ChromaTestLogo color="#ff4f5e" size={13} variant="layers" />
+            <span>+ Rotes Logo-Test</span>
+          </button>
         </div>
       </div>
 
@@ -763,6 +839,14 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
               const tabColor = match.matched && match.rule ? match.rule.color : null;
               const containerName = match.matched && match.rule ? match.rule.containerName : null;
 
+              const opacity = (match.matched && typeof match.rule?.tabOpacity === 'number')
+                ? match.rule.tabOpacity
+                : (activeTabOpacity !== undefined ? activeTabOpacity : 0.35);
+
+              const activeBg = tabColor 
+                ? hexToRgba(tabColor, opacity)
+                : (browserTheme === 'dark' ? '#1e1e2e' : '#ffffff');
+
               return (
                 <div
                   key={tab.id}
@@ -770,21 +854,40 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                   className={`group relative flex items-center gap-2 px-3 py-2 text-xs font-medium cursor-pointer transition-all duration-150 min-w-[140px] max-w-[220px] rounded-t-lg select-none shrink-0 ${
                     isActive
                       ? browserTheme === 'dark'
-                        ? 'bg-[#1e1e2e] text-white shadow-sm'
-                        : 'bg-white text-slate-900 shadow-sm'
+                        ? 'text-white shadow-sm'
+                        : 'text-slate-900 shadow-sm'
                       : browserTheme === 'dark'
                       ? 'text-slate-400 hover:bg-[#181825]/80 hover:text-slate-200'
                       : 'text-slate-600 hover:bg-[#e3e5e8] hover:text-slate-900'
                   }`}
                   style={{
+                    backgroundColor: isActive ? activeBg : undefined,
                     borderTop: tabColor ? `3px solid ${tabColor}` : '3px solid transparent',
                   }}
                 >
                   {/* Favicon */}
-                  <span className="text-sm shrink-0">
-                    {match.matched && match.rule?.customEmoji && match.rule.enableFaviconEmoji !== false
-                      ? match.rule.customEmoji
-                      : (tab.favicon || '🌐')}
+                  <span 
+                    className="text-sm shrink-0 flex items-center justify-center transition-all"
+                    style={{
+                      filter: (enableFaviconContrastHalo !== false && isActive && tabColor)
+                        ? (browserTheme === 'dark'
+                            ? 'drop-shadow(0 0 1.5px rgba(255,255,255,0.85))'
+                            : 'drop-shadow(0 0 1.5px rgba(0,0,0,0.75))')
+                        : 'none',
+                    }}
+                  >
+                    {tab.favicon === 'layers-logo' ? (
+                      <ChromaTestLogo 
+                        color={tabColor || '#ff4f5e'} 
+                        size={16} 
+                        variant="layers" 
+                        withHalo={enableFaviconContrastHalo !== false && isActive} 
+                      />
+                    ) : match.matched && match.rule?.customEmoji && match.rule.enableFaviconEmoji !== false ? (
+                      match.rule.customEmoji
+                    ) : (
+                      tab.favicon || '🌐'
+                    )}
                   </span>
 
                   {/* Title & Container Subtitle */}
