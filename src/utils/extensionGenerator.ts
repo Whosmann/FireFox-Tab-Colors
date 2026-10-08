@@ -50,6 +50,7 @@ export function generateExtensionFiles(config: ExtensionConfig): GeneratedFile[]
       'webNavigation',
       'storage',
       'theme',
+      'alarms',
     ],
     host_permissions: ['<all_urls>'],
     background: {
@@ -97,6 +98,35 @@ const DEFAULT_CONFIG = ${JSON.stringify(config, null, 2)};
 let currentRules = DEFAULT_CONFIG.rules;
 let appConfig = DEFAULT_CONFIG;
 const containerCache = new Map(); // name -> cookieStoreId
+let isInitialized = false;
+let initPromise = null;
+
+const CONTAINER_COLOR_MAP = {
+  blue: '#37adff',
+  turquoise: '#00c79a',
+  green: '#51cf66',
+  yellow: '#ffcb00',
+  orange: '#ff9400',
+  red: '#ff4f5e',
+  pink: '#ff4ba0',
+  purple: '#9059ff',
+};
+
+// Ensures config and rules are fully loaded from storage before handling events
+function ensureInitialized() {
+  if (isInitialized) return Promise.resolve();
+  if (!initPromise) {
+    initPromise = initExtension()
+      .then(() => {
+        isInitialized = true;
+      })
+      .catch((err) => {
+        console.warn('[TabChroma] Init error:', err);
+        isInitialized = true;
+      });
+  }
+  return initPromise;
+}
 
 // Initialize extension storage and load rules
 async function initExtension() {
@@ -296,6 +326,7 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (details.frameId !== 0) return; // Top-level tab frame only
   if (!details.url || details.url.startsWith('about:') || details.url.startsWith('moz-extension:')) return;
 
+  await ensureInitialized();
   const rule = findMatchingRule(details.url);
 
   try {
@@ -347,6 +378,47 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
   }
 });
 
+// Resolves color rule for tab by URL, or falls back to container color if in a container
+async function resolveRuleOrContainerColor(tab) {
+  if (!tab) return null;
+  const targetUrl = tab.url || tab.pendingUrl || '';
+  if (targetUrl && !targetUrl.startsWith('about:') && !targetUrl.startsWith('moz-extension:')) {
+    const rule = findMatchingRule(targetUrl);
+    if (rule) return rule;
+  }
+
+  // Fallback: If tab is in a colored Firefox Container, inherit container's color!
+  if (tab.cookieStoreId && tab.cookieStoreId !== 'firefox-default') {
+    try {
+      const identity = await browser.contextualIdentities.get(tab.cookieStoreId);
+      if (identity && identity.color) {
+        const hex = CONTAINER_COLOR_MAP[identity.color] || '#37adff';
+        return {
+          id: 'container-fallback-' + tab.cookieStoreId,
+          name: identity.name || 'Container',
+          color: hex,
+          firefoxContainerColor: identity.color,
+          firefoxContainerIcon: identity.icon || 'circle',
+          enabled: true,
+          colorMode: 'container',
+        };
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
+
+// Synchronizes theme and visual cues for the specified tab
+async function updateTabThemeAndVisuals(tab) {
+  if (!tab) return;
+  const ruleOrContainer = await resolveRuleOrContainerColor(tab);
+  await applyThemeForTab(tab.windowId, ruleOrContainer);
+  if (tab.id) {
+    await notifyTabVisuals(tab.id, ruleOrContainer);
+  }
+}
+
 // Notify content script of accent color & custom tab symbol
 async function notifyTabVisuals(tabId, rule) {
   try {
@@ -373,27 +445,55 @@ async function notifyTabVisuals(tabId, rule) {
 // Update window theme when switching active tab
 browser.tabs.onActivated.addListener(async (activeInfo) => {
   try {
+    await ensureInitialized();
     const tab = await browser.tabs.get(activeInfo.tabId);
-    if (!tab || !tab.url) return;
-    const rule = findMatchingRule(tab.url);
-    await applyThemeForTab(activeInfo.windowId, rule);
-    await notifyTabVisuals(tab.id, rule);
-  } catch (err) {}
-});
-
-// Listen for tab URL updates
-browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.url) {
-    const rule = findMatchingRule(changeInfo.url);
-    if (tab.active) {
-      await applyThemeForTab(tab.windowId, rule);
-    }
-    await notifyTabVisuals(tabId, rule);
+    if (!tab) return;
+    await updateTabThemeAndVisuals(tab);
+  } catch (err) {
+    console.warn('[TabChroma] onActivated error:', err);
   }
 });
 
+// Listen for tab URL updates, navigation, or restored tabs (discarded / sleeping tabs waking up)
+browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  try {
+    await ensureInitialized();
+    if (changeInfo.url || (tab.active && (changeInfo.status === 'complete' || changeInfo.discarded === false))) {
+      if (tab.active) {
+        await updateTabThemeAndVisuals(tab);
+      } else {
+        const ruleOrContainer = await resolveRuleOrContainerColor(tab);
+        await notifyTabVisuals(tabId, ruleOrContainer);
+      }
+    }
+  } catch (err) {}
+});
+
+// Update theme when window focus changes (multi-window support or refocusing Firefox)
+browser.windows.onFocusChanged.addListener(async (windowId) => {
+  if (windowId === browser.windows.WINDOW_ID_NONE) return;
+  try {
+    await ensureInitialized();
+    const activeTabs = await browser.tabs.query({ active: true, windowId });
+    if (activeTabs && activeTabs[0]) {
+      await updateTabThemeAndVisuals(activeTabs[0]);
+    }
+  } catch (err) {}
+});
+
+// Keep-alive heartbeat alarm for Manifest V3 background script to stay responsive
+try {
+  browser.alarms.create('tabChromaHeartbeat', { periodInMinutes: 1 });
+  browser.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === 'tabChromaHeartbeat') {
+      await ensureInitialized();
+    }
+  });
+} catch (e) {}
+
 // Message listener for popup & options communication
 browser.runtime.onMessage.addListener(async (message) => {
+  await ensureInitialized();
   if (message.action === 'GET_CONFIG') {
     return appConfig;
   }
@@ -419,10 +519,8 @@ browser.storage.onChanged.addListener(async (changes, area) => {
     containerCache.clear();
     try {
       const activeTabs = await browser.tabs.query({ active: true, currentWindow: true });
-      if (activeTabs && activeTabs[0] && activeTabs[0].url) {
-        const rule = findMatchingRule(activeTabs[0].url);
-        await applyThemeForTab(activeTabs[0].windowId, rule);
-        await notifyTabVisuals(activeTabs[0].id, rule);
+      if (activeTabs && activeTabs[0]) {
+        await updateTabThemeAndVisuals(activeTabs[0]);
       }
     } catch (e) {}
   }
