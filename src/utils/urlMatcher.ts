@@ -236,3 +236,65 @@ export function hexToRgba(hex: string, alpha: number = 1): string {
   return hex;
 }
 
+/**
+ * Calculates relative luminance according to WCAG 2.1 specs.
+ */
+export function getRelativeLuminance(hex: string): number {
+  if (!hex) return 0.5;
+  let clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean.split('').map((c) => c + c).join('');
+  }
+  if (clean.length < 6) return 0.5;
+
+  const r = parseInt(clean.substring(0, 2), 16) / 255;
+  const g = parseInt(clean.substring(2, 4), 16) / 255;
+  const b = parseInt(clean.substring(4, 6), 16) / 255;
+
+  const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+/**
+ * Calculates the WCAG contrast ratio (1:1 to 21:1) between foreground and background.
+ */
+export function getContrastRatio(fgHex: string, bgHex: string): number {
+  const l1 = getRelativeLuminance(fgHex);
+  const l2 = getRelativeLuminance(bgHex);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * Evaluates WCAG rating and recommendations.
+ */
+export function getWcagRating(fgHex: string, bgHex: string): {
+  ratio: number;
+  ratioStr: string;
+  level: 'AAA' | 'AA' | 'Fail';
+  label: string;
+  isGood: boolean;
+} {
+  const ratio = getContrastRatio(fgHex, bgHex);
+  const ratioStr = ratio.toFixed(1) + ':1';
+  if (ratio >= 7.0) {
+    return { ratio, ratioStr, level: 'AAA', label: 'Hervorragend (AAA)', isGood: true };
+  } else if (ratio >= 4.5) {
+    return { ratio, ratioStr, level: 'AA', label: 'Gut lesbar (AA)', isGood: true };
+  } else if (ratio >= 3.0) {
+    return { ratio, ratioStr, level: 'AA', label: 'Ausreichend (Großtext)', isGood: true };
+  } else {
+    return { ratio, ratioStr, level: 'Fail', label: 'Zu wenig Kontrast (Schwer lesbar)', isGood: false };
+  }
+}
+
+/**
+ * Suggests an optimal high-contrast text color for a given background (#fbfbfe or #15141a).
+ */
+export function getOptimalTextColor(bgHex: string): string {
+  const lum = getRelativeLuminance(bgHex);
+  return lum > 0.4 ? '#15141a' : '#fbfbfe';
+}
+
+

@@ -22,7 +22,7 @@ import {
   Smile
 } from 'lucide-react';
 import { TabColorRule, FirefoxContainerColor, FirefoxContainerIcon, ColorMode } from '../types/extension';
-import { PRESET_PACKS } from '../utils/presetRules';
+import { PRESET_PACKS, PresetPack } from '../utils/presetRules';
 import { ImportRulesModal, DuplicateConflictStrategy, getRuleKey } from './ImportRulesModal';
 import { BulkEditModal } from './BulkEditModal';
 import { FIREFOX_CONTAINER_COLORS, findClosestContainerColor } from '../utils/urlMatcher';
@@ -77,6 +77,13 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
   const [customEmojiSync, setCustomEmojiSync] = useState('');
   const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [showOnlySelected, setShowOnlySelected] = useState(false);
+  const [isPresetPacksModalOpen, setIsPresetPacksModalOpen] = useState(false);
+  const [selectedPresetPackId, setSelectedPresetPackId] = useState<string>(PRESET_PACKS[0]?.id || 'workflow-development');
+  const [selectedPresetRuleIds, setSelectedPresetRuleIds] = useState<Set<string>>(() => {
+    const firstPack = PRESET_PACKS[0];
+    return new Set(firstPack ? firstPack.rules.map((r) => r.id) : []);
+  });
+  const [presetRuleSearchQuery, setPresetRuleSearchQuery] = useState('');
 
   // Filter rules by query and selection filter
   const filteredRules = rules.filter((r) => {
@@ -450,15 +457,140 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
     });
   };
 
+  const handleApplyPresetPack = (pack: PresetPack, mode: 'append' | 'replace', onlySelected = true) => {
+    const rulesToApply = onlySelected
+      ? pack.rules.filter((r) => selectedPresetRuleIds.has(r.id))
+      : pack.rules;
+
+    if (rulesToApply.length === 0) {
+      setNotification({
+        type: 'error',
+        text: 'Bitte wähle mindestens eine Regel aus dem Pack aus.',
+      });
+      return;
+    }
+
+    if (mode === 'replace') {
+      const updated = rulesToApply.map((r, idx) => ({
+        ...r,
+        id: `rule-${Date.now()}-${idx}`,
+        priority: idx + 1,
+      }));
+      onUpdateRules(updated);
+      setSelectedRuleIds(new Set());
+      setIsConfirmingBulkDelete(false);
+      setIsPresetPacksModalOpen(false);
+      setNotification({
+        type: 'success',
+        text: `✓ ${updated.length} ausgewählte Regeln aus "${pack.name}" geladen (vorherige Regeln ersetzt).`,
+      });
+    } else {
+      // Append / Merge: Avoid duplicate patterns
+      const existingKeys = new Set(rules.map((r) => `${r.patternType}::${r.pattern.trim().toLowerCase()}`));
+      let addedCount = 0;
+      const toAdd: TabColorRule[] = [];
+
+      rulesToApply.forEach((r, idx) => {
+        const key = `${r.patternType}::${r.pattern.trim().toLowerCase()}`;
+        if (!existingKeys.has(key)) {
+          toAdd.push({
+            ...r,
+            id: `rule-${Date.now()}-${idx}`,
+            priority: rules.length + toAdd.length + 1,
+          });
+          existingKeys.add(key);
+          addedCount++;
+        }
+      });
+
+      if (addedCount === 0) {
+        setNotification({
+          type: 'info',
+          text: `Alle ${rulesToApply.length} ausgewählten Regeln aus "${pack.name}" sind bereits in deiner Liste vorhanden.`,
+        });
+      } else {
+        const merged = [...rules, ...toAdd];
+        onUpdateRules(merged);
+        setIsPresetPacksModalOpen(false);
+        setNotification({
+          type: 'success',
+          text: `✓ ${addedCount} Regeln aus "${pack.name}" hinzugefügt (${rulesToApply.length - addedCount} bereits vorhandene übersprungen).`,
+        });
+      }
+    }
+  };
+
   const handleLoadPreset = (packId: string) => {
     const pack = PRESET_PACKS.find((p) => p.id === packId);
     if (!pack) return;
-    onUpdateRules(pack.rules);
-    setSelectedRuleIds(new Set());
-    setIsConfirmingBulkDelete(false);
+    setSelectedPresetPackId(pack.id);
+    setSelectedPresetRuleIds(new Set(pack.rules.map((r) => r.id)));
+    setPresetRuleSearchQuery('');
+    setIsPresetPacksModalOpen(true);
+  };
+
+  const handleSelectPresetPackInModal = (packId: string) => {
+    const pack = PRESET_PACKS.find((p) => p.id === packId);
+    if (!pack) return;
+    setSelectedPresetPackId(pack.id);
+    setSelectedPresetRuleIds(new Set(pack.rules.map((r) => r.id)));
+    setPresetRuleSearchQuery('');
+  };
+
+  const handleTogglePresetRule = (ruleId: string) => {
+    setSelectedPresetRuleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(ruleId)) {
+        next.delete(ruleId);
+      } else {
+        next.add(ruleId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllPresetRules = (packRules: TabColorRule[]) => {
+    setSelectedPresetRuleIds(new Set(packRules.map((r) => r.id)));
+  };
+
+  const handleDeselectAllPresetRules = () => {
+    setSelectedPresetRuleIds(new Set());
+  };
+
+  const handleAddSinglePresetRule = (presetRule: TabColorRule) => {
+    const newRule: TabColorRule = {
+      ...presetRule,
+      id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      priority: rules.length + 1,
+    };
+    onUpdateRules([...rules, newRule]);
     setNotification({
       type: 'success',
-      text: `Preset-Pack "${pack.name}" mit ${pack.rules.length} Beispiel-Regeln geladen!`,
+      text: `✓ Einzelne Regel "${presetRule.name}" (${presetRule.pattern}) hinzugefügt.`,
+    });
+  };
+
+  const handleUpdateExistingWithPreset = (presetRule: TabColorRule) => {
+    const key = `${presetRule.patternType}::${presetRule.pattern.trim().toLowerCase()}`;
+    const updated = rules.map((r) => {
+      if (`${r.patternType}::${r.pattern.trim().toLowerCase()}` === key) {
+        return {
+          ...r,
+          name: presetRule.name,
+          color: presetRule.color,
+          firefoxContainerColor: presetRule.firefoxContainerColor,
+          containerName: presetRule.containerName,
+          customEmoji: presetRule.customEmoji,
+          firefoxContainerIcon: presetRule.firefoxContainerIcon,
+          colorMode: presetRule.colorMode,
+        };
+      }
+      return r;
+    });
+    onUpdateRules(updated);
+    setNotification({
+      type: 'success',
+      text: `✓ Vorhandene Regel "${presetRule.name}" mit Preset-Einstellungen aktualisiert.`,
     });
   };
 
@@ -582,6 +714,16 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
           >
             <Upload className="w-3.5 h-3.5 text-sky-600" />
             <span>Import JSON</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsPresetPacksModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-300 rounded-lg transition-colors shadow-2xs cursor-pointer"
+            title="Vorkonfigurierte Workflow-Regelpakete (Development, Social, Shopping, Work, Privacy) öffnen"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+            <span>Preset Packs</span>
           </button>
 
           {selectedCount > 0 ? (
@@ -749,17 +891,49 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
-          <span className="text-slate-400">Presets:</span>
-          {PRESET_PACKS.map((pack) => (
+        {/* Workflow Preset Packs Quick Selector */}
+        <div className="p-3 rounded-xl bg-gradient-to-r from-purple-50/90 via-purple-50/50 to-sky-50/80 border border-purple-200 text-xs shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                Workflow Preset-Packs
+              </span>
+              <span className="text-[11px] text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-full font-medium hidden md:inline">
+                Regeln einzeln oder im Pack laden
+              </span>
+            </div>
             <button
-              key={pack.id}
-              onClick={() => handleLoadPreset(pack.id)}
-              className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors text-xs whitespace-nowrap cursor-pointer"
+              type="button"
+              onClick={() => setIsPresetPacksModalOpen(true)}
+              className="text-xs text-purple-700 hover:text-purple-900 font-bold hover:underline cursor-pointer flex items-center gap-1 ml-auto sm:ml-0"
             >
-              {pack.name}
+              <span>Alle Packs &amp; einzelne Regeln durchsuchen</span>
+              <span>→</span>
             </button>
-          ))}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 w-full">
+            {PRESET_PACKS.map((pack) => (
+              <button
+                key={pack.id}
+                type="button"
+                onClick={() => handleLoadPreset(pack.id)}
+                className="flex items-center justify-between p-2 px-3 rounded-lg bg-white hover:bg-purple-100/60 text-slate-800 border border-purple-200/80 hover:border-purple-300 font-semibold text-xs shadow-2xs transition-all cursor-pointer group text-left"
+                title={`${pack.name} (${pack.rules.length} Regeln) – Klick für Einzel-Auswahl & Import`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-base shrink-0">{pack.icon}</span>
+                  <span className="truncate group-hover:text-purple-700 font-medium">{pack.name.split(' ')[0]}</span>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold shrink-0 ml-1">
+                  {pack.rules.length}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1452,6 +1626,401 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
         selectedCount={selectedCount}
         onApply={handleBulkEditApply}
       />
+
+      {/* Modal for selecting Workflow Preset Packs */}
+      {isPresetPacksModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl xl:max-w-7xl h-[90vh] max-h-[94vh] flex flex-col overflow-hidden animate-scale-up">
+            {/* Modal Header */}
+            <div className="px-5 py-3.5 border-b border-slate-200 bg-gradient-to-r from-purple-50 via-white to-sky-50 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span>Workflow Preset-Packs</span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold">
+                      {PRESET_PACKS.length} Packs verfügbar
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Wähle vorkonfigurierte Regeln für Development, Social Media, Shopping oder Work – lade einzelne Regeln gezielt oder ganze Packs auf einmal.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPresetPacksModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Schließen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: Left column Packs navigation & Right column Pack Detail / Rules preview */}
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-5 p-4 sm:p-5 overflow-hidden">
+              {/* Left Column: Preset Pack Cards List (4 cols) */}
+              <div className="lg:col-span-4 xl:col-span-4 flex flex-col h-full min-h-0">
+                <div className="flex items-center justify-between mb-2 shrink-0">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    1. Preset-Pack wählen:
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {PRESET_PACKS.length} Packs
+                  </span>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto pr-1.5 space-y-2.5">
+                  {PRESET_PACKS.map((pack) => {
+                    const isSelected = selectedPresetPackId === pack.id;
+                    return (
+                      <div
+                        key={pack.id}
+                        onClick={() => handleSelectPresetPackInModal(pack.id)}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer text-left flex flex-col justify-between gap-2 ${
+                          isSelected
+                            ? 'border-purple-500 bg-purple-50/70 ring-2 ring-purple-400/30 shadow-xs'
+                            : 'border-slate-200 hover:border-purple-300 bg-white hover:bg-slate-50/80 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">{pack.icon}</span>
+                            <div>
+                              <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                                <span>{pack.name}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {pack.rules.length} vorkonfigurierte Regeln
+                              </span>
+                            </div>
+                          </div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${
+                            isSelected 
+                              ? 'bg-purple-600 text-white border-purple-600'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}>
+                            {pack.badge}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-600 line-clamp-2">
+                          {pack.description}
+                        </p>
+
+                        {/* Swatches preview of colors in this pack */}
+                        <div className="flex items-center gap-1 pt-1.5 border-t border-slate-100">
+                          <div className="flex items-center -space-x-1 overflow-hidden">
+                            {pack.rules.slice(0, 6).map((r, i) => (
+                              <span
+                                key={i}
+                                className="w-3.5 h-3.5 rounded-full border border-white shadow-2xs"
+                                style={{ backgroundColor: r.color }}
+                                title={`${r.name} (${r.firefoxContainerColor})`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[10px] text-slate-400 ml-1.5 truncate">
+                            {pack.tags.slice(0, 3).join(', ')}...
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right Column: Pack Detail & Rule Selection List (8 cols) */}
+              <div className="lg:col-span-8 xl:col-span-8 flex flex-col h-full min-h-0 bg-slate-50/80 rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs">
+                {(() => {
+                  const activePack = PRESET_PACKS.find((p) => p.id === selectedPresetPackId) || PRESET_PACKS[0];
+                  if (!activePack) return null;
+
+                  const filteredPackRules = activePack.rules.filter((rule) => {
+                    if (!presetRuleSearchQuery.trim()) return true;
+                    const q = presetRuleSearchQuery.toLowerCase().trim();
+                    return (
+                      rule.name.toLowerCase().includes(q) ||
+                      rule.pattern.toLowerCase().includes(q) ||
+                      rule.containerName.toLowerCase().includes(q) ||
+                      rule.firefoxContainerColor.toLowerCase().includes(q)
+                    );
+                  });
+
+                  const selectedInActivePackCount = activePack.rules.filter((r) => selectedPresetRuleIds.has(r.id)).length;
+                  const allActivePackSelected = activePack.rules.length > 0 && selectedInActivePackCount === activePack.rules.length;
+
+                  return (
+                    <>
+                      {/* Pack Header info (shrink-0) */}
+                      <div className="shrink-0 space-y-2 pb-3 border-b border-slate-200">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-3xl">{activePack.icon}</span>
+                            <div>
+                              <h4 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+                                <span>{activePack.name}</span>
+                                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-bold">
+                                  {activePack.rules.length} Regeln
+                                </span>
+                              </h4>
+                              <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">
+                                {activePack.description}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Contained Domains Tags */}
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                          <span className="text-[11px] font-bold text-slate-400">Domains:</span>
+                          {activePack.tags.map((tag) => (
+                            <span key={tag} className="text-[10.5px] font-mono px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 font-medium shadow-2xs">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Rule Selection Toolbar (shrink-0) */}
+                      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (allActivePackSelected) {
+                                handleDeselectAllPresetRules();
+                              } else {
+                                handleSelectAllPresetRules(activePack.rules);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              readOnly
+                              checked={allActivePackSelected}
+                              className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer pointer-events-none"
+                            />
+                            <span>{allActivePackSelected ? 'Alle abwählen' : 'Alle auswählen'}</span>
+                          </button>
+
+                          <span className="text-xs font-semibold text-purple-900 bg-purple-100/70 px-2.5 py-1 rounded-lg">
+                            {selectedInActivePackCount} von {activePack.rules.length} Regeln ausgewählt
+                          </span>
+                        </div>
+
+                        {/* Search filter in pack */}
+                        <div className="relative min-w-[180px] max-w-[260px]">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={presetRuleSearchQuery}
+                            onChange={(e) => setPresetRuleSearchQuery(e.target.value)}
+                            placeholder="Regeln filtern..."
+                            className="w-full pl-8 pr-3 py-1 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          {presetRuleSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setPresetRuleSearchQuery('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Rules preview and selective picking list (flex-1 min-h-0: FILLS ALL AVAILABLE VERTICAL SPACE!) */}
+                      <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1.5 my-1">
+                        {filteredPackRules.length === 0 ? (
+                          <div className="p-8 text-center text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+                            Keine Regeln entsprechen dem Filter "{presetRuleSearchQuery}".
+                          </div>
+                        ) : (
+                          filteredPackRules.map((rule) => {
+                            const isChecked = selectedPresetRuleIds.has(rule.id);
+                            const existingRule = rules.find(
+                              (r) =>
+                                r.patternType === rule.patternType &&
+                                r.pattern.trim().toLowerCase() === rule.pattern.trim().toLowerCase()
+                            );
+                            const isAlreadyPresent = !!existingRule;
+
+                            return (
+                              <div
+                                key={rule.id}
+                                onClick={() => handleTogglePresetRule(rule.id)}
+                                className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 shadow-2xs transition-all cursor-pointer ${
+                                  isChecked
+                                    ? 'bg-white border-purple-300 ring-1 ring-purple-400/20 shadow-xs'
+                                    : 'bg-white/80 border-slate-200 hover:border-slate-300 opacity-80 hover:opacity-100'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {/* Checkbox for batch select */}
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      handleTogglePresetRule(rule.id);
+                                    }}
+                                    className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
+                                  />
+
+                                  {/* Color indicator and emoji */}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span
+                                      className="w-4 h-4 rounded-full border border-black/15 shadow-2xs shrink-0"
+                                      style={{ backgroundColor: rule.color }}
+                                      title={rule.color}
+                                    />
+                                    <span className="text-base shrink-0">{rule.customEmoji || '🦊'}</span>
+                                  </div>
+
+                                  {/* Rule Name & Pattern */}
+                                  <div className="min-w-0">
+                                    <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                                      <span>{rule.name}</span>
+                                      {isAlreadyPresent && (
+                                        <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                          ✓ Bereits vorhanden
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] font-mono text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                                      <span className="px-1 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">
+                                        {rule.patternType}
+                                      </span>
+                                      <span className="text-purple-700 font-semibold">{rule.pattern}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {/* Container badge */}
+                                  <div className="hidden sm:flex flex-col items-end">
+                                    <span
+                                      className="px-2 py-0.5 rounded text-[10px] font-semibold border"
+                                      style={{
+                                        backgroundColor: `${rule.color}15`,
+                                        borderColor: `${rule.color}40`,
+                                        color: rule.color,
+                                      }}
+                                    >
+                                      {rule.containerName}
+                                    </span>
+                                    <span className="text-[9.5px] text-slate-400 font-mono mt-0.5">
+                                      {rule.firefoxContainerColor}
+                                    </span>
+                                  </div>
+
+                                  {/* INDIVIDUAL ADD BUTTON ("nur einzelne laden") */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isAlreadyPresent) {
+                                        handleUpdateExistingWithPreset(rule);
+                                      } else {
+                                        handleAddSinglePresetRule(rule);
+                                      }
+                                    }}
+                                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                                      isAlreadyPresent
+                                        ? 'bg-slate-100 hover:bg-purple-100 text-slate-700 hover:text-purple-800 border border-slate-300 hover:border-purple-300'
+                                        : 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
+                                    }`}
+                                    title={
+                                      isAlreadyPresent
+                                        ? 'Bestehende Regel mit den Preset-Farben & Container-Einstellungen aktualisieren'
+                                        : 'Nur diese eine Regel direkt zu deinen Regeln hinzufügen'
+                                    }
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>{isAlreadyPresent ? 'Aktualisieren' : '+ Einzeln laden'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Action options (shrink-0 at bottom) */}
+                      <div className="pt-3 border-t border-slate-200 shrink-0 space-y-2">
+                        <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
+                          <span>
+                            Ausgewählte Regeln ({selectedInActivePackCount}) auf deine Regelliste anwenden:
+                          </span>
+                          <span className="text-slate-400 text-[11px] hidden sm:inline">
+                            Tipp: Über <strong>"+ Einzeln laden"</strong> an jeder Regel kannst du auch gezielt nur 1 Regel übernehmen.
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            disabled={selectedInActivePackCount === 0}
+                            onClick={() => handleApplyPresetPack(activePack, 'append', true)}
+                            className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                            title="Fügt nur die mit Häkchen ausgewählten Regeln zu deiner Liste hinzu"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>
+                              + Ausgewählte Regeln hinzufügen ({selectedInActivePackCount})
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={selectedInActivePackCount === 0}
+                            onClick={() => {
+                              if (
+                                rules.length === 0 ||
+                                window.confirm(
+                                  `Möchtest du alle bisherigen ${rules.length} Regeln wirklich durch die ${selectedInActivePackCount} ausgewählten Regeln aus "${activePack.name}" ersetzen?`
+                                )
+                              ) {
+                                handleApplyPresetPack(activePack, 'replace', true);
+                              }
+                            }}
+                            className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-800 border border-slate-300 font-semibold text-xs shadow-2xs transition-colors cursor-pointer"
+                            title="Ersetzt alle bestehenden Regeln durch die ausgewählten Regeln"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                            <span>
+                              Ausgewählte Regeln ersetzen ({selectedInActivePackCount})
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 shrink-0">
+              <span className="hidden sm:inline">
+                Tipp: Mit <strong>"+ Einzeln laden"</strong> oder <strong>"+ Ausgewählte Regeln hinzufügen"</strong> bleiben all deine selbst erstellten Regeln erhalten.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsPresetPacksModalOpen(false)}
+                className="px-4 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs ml-auto cursor-pointer"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -37,6 +37,14 @@ const INITIAL_CONFIG: ExtensionConfig = {
   revertUnmatchedToDefault: true,
   activeTabOpacity: 0.35, // 35% Deckkraft: Gleichfarbige Favicons bleiben 100% erkennbar
   enableFaviconContrastHalo: true, // Schutz-Halo für Favicons
+  baseThemeMode: 'system', // Basis-Farbschema für Hybrid-Modus & Menü-Layout (system, dark, light, custom)
+  customBaseFrameColor: '#1c1b22',
+  customBaseToolbarColor: '#2b2a33',
+  customBaseTextColor: '#fbfbfe',
+  hybridWindowBehavior: 'static_window', // Statisches Fenster + separater aktiver Tab-Farbindikator
+  hybridTabIndicatorStyle: 'accent_line_and_fill', // Akzentlinie & sanfte Tönung
+  hybridIndicatorColor: undefined,
+  savedThemes: [],
 };
 
 export default function App() {
@@ -61,6 +69,18 @@ export default function App() {
           parsed.enableFaviconContrastHalo = true;
         }
 
+        // Base theme configuration for hybrid mode & menu layout
+        if (!parsed.baseThemeMode) {
+          parsed.baseThemeMode = 'system';
+        }
+        if (!parsed.customBaseFrameColor) parsed.customBaseFrameColor = '#1c1b22';
+        if (!parsed.customBaseToolbarColor) parsed.customBaseToolbarColor = '#2b2a33';
+        if (!parsed.customBaseTextColor) parsed.customBaseTextColor = '#fbfbfe';
+
+        if (!parsed.hybridWindowBehavior) parsed.hybridWindowBehavior = 'static_window';
+        if (!parsed.hybridTabIndicatorStyle) parsed.hybridTabIndicatorStyle = 'accent_line_and_fill';
+        if (!parsed.savedThemes) parsed.savedThemes = [];
+
         // Strictly sanitize any rule referencing azure or proprietary cloud
         if (parsed.rules && Array.isArray(parsed.rules)) {
           parsed.rules = parsed.rules.filter((r: TabColorRule) => {
@@ -74,11 +94,20 @@ export default function App() {
           }
         }
 
-        // Default to safe container mode and disabled window theme override if not set
         if (!parsed.defaultColor) parsed.defaultColor = '#37adff';
         if (!parsed.defaultContainerColor) parsed.defaultContainerColor = 'blue';
         if (!parsed.defaultMode) parsed.defaultMode = 'container';
-        if (parsed.enableActiveTabTheme === undefined) parsed.enableActiveTabTheme = false;
+        if (parsed.enableActiveTabTheme === undefined) {
+          parsed.enableActiveTabTheme = false;
+        }
+
+        if (parsed.rules && Array.isArray(parsed.rules)) {
+          parsed.rules.forEach((r: TabColorRule) => {
+            if (!r.colorMode) {
+              r.colorMode = 'container';
+            }
+          });
+        }
 
         return parsed;
       }
@@ -233,6 +262,15 @@ export default function App() {
               rules={config.rules}
               activeTabOpacity={config.activeTabOpacity ?? 0.35}
               enableFaviconContrastHalo={config.enableFaviconContrastHalo !== false}
+              baseThemeMode={config.baseThemeMode}
+              customBaseFrameColor={config.customBaseFrameColor}
+              customBaseToolbarColor={config.customBaseToolbarColor}
+              customBaseTextColor={config.customBaseTextColor}
+              hybridWindowBehavior={config.hybridWindowBehavior ?? 'static_window'}
+              hybridTabIndicatorStyle={config.hybridTabIndicatorStyle ?? 'accent_line_and_fill'}
+              hybridIndicatorColor={config.hybridIndicatorColor}
+              defaultColor={config.defaultColor}
+              defaultMode={config.defaultMode}
               onChangeOpacity={(op) => handleChangeConfig({ activeTabOpacity: op })}
               onToggleHalo={(halo) => handleChangeConfig({ enableFaviconContrastHalo: halo })}
               onAddRuleClick={() => {
@@ -244,8 +282,17 @@ export default function App() {
                 setIsRuleModalOpen(true);
               }}
               onUpdateRule={(updatedRule) => {
-                const nextRules = config.rules.map((r) => r.id === updatedRule.id ? updatedRule : r);
+                const exists = config.rules.some((r) => r.id === updatedRule.id);
+                const nextRules = exists
+                  ? config.rules.map((r) => r.id === updatedRule.id ? updatedRule : r)
+                  : [updatedRule, ...config.rules];
                 handleUpdateRules(nextRules);
+                showToast(`Regel "${updatedRule.name}" gespeichert!`);
+              }}
+              onDeleteRule={(ruleId) => {
+                const nextRules = config.rules.filter((r) => r.id !== ruleId);
+                handleUpdateRules(nextRules);
+                showToast('Regel entfernt!');
               }}
             />
             <UrlTesterBar

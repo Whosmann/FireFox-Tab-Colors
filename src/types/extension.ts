@@ -31,6 +31,27 @@ export type FirefoxContainerIcon =
 
 export type ColorMode = 'container' | 'theme' | 'hybrid';
 
+export type BaseThemeMode = 'system' | 'dark' | 'light' | 'custom';
+
+export type HybridWindowBehavior = 'static_window' | 'dynamic_toolbar';
+export type HybridTabIndicatorStyle = 'accent_line_and_fill' | 'line_only' | 'glow_border';
+
+export interface SavedTheme {
+  id: string;
+  name: string;
+  description?: string;
+  frame: string;
+  toolbar: string;
+  text: string;
+  defaultColor?: string;
+  defaultContainerColor?: FirefoxContainerColor;
+  date?: string;
+  hybridWindowBehavior?: HybridWindowBehavior;
+  hybridTabIndicatorStyle?: HybridTabIndicatorStyle;
+  activeTabOpacity?: number;
+  isCustom?: boolean;
+}
+
 export interface TabColorRule {
   id: string;
   name: string;
@@ -66,6 +87,14 @@ export interface ExtensionConfig {
   revertUnmatchedToDefault?: boolean;
   activeTabOpacity?: number; // Deckkraft des aktiven Tabs (0.15 bis 1.0, z. B. 0.35 für perfekten Favicon-Kontrast)
   enableFaviconContrastHalo?: boolean; // Schützt gleichfarbige Favicons vor dem Verschwimmen im Tab-Hintergrund
+  baseThemeMode?: BaseThemeMode; // Basis-Farbschema für Hybrid/Theme-Modus & Menü-Layout (system, dark, light, custom)
+  customBaseFrameColor?: string; // Optionale benutzerdefinierte Rahmenfarbe
+  customBaseToolbarColor?: string; // Optionale benutzerdefinierte Toolbarfarbe
+  customBaseTextColor?: string; // Optionale Textfarbe
+  hybridWindowBehavior?: HybridWindowBehavior; // 'static_window' (Fenster bleibt fix, nur aktiver Tab akzentuiert) | 'dynamic_toolbar'
+  hybridTabIndicatorStyle?: HybridTabIndicatorStyle; // 'accent_line_and_fill' | 'line_only' | 'glow_border'
+  hybridIndicatorColor?: string; // Optionaler Farbindikator-Farbton (standardmäßig Regel-/Container-Farbe)
+  savedThemes?: SavedTheme[]; // Gespeicherte benutzerdefinierte Theme-Profile
 }
 
 export interface MatchResult {

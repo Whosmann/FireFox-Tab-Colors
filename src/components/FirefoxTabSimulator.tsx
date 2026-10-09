@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -20,10 +20,11 @@ import {
   Upload,
   Database,
   Trash2,
-  Edit3
+  Edit3,
+  Check
 } from 'lucide-react';
-import { TabColorRule, TabSimulatorItem } from '../types/extension';
-import { matchUrlAgainstRules, hexToRgba } from '../utils/urlMatcher';
+import { TabColorRule, TabSimulatorItem, BaseThemeMode, HybridWindowBehavior, HybridTabIndicatorStyle, ColorMode, UrlPatternType, FirefoxContainerColor } from '../types/extension';
+import { matchUrlAgainstRules, hexToRgba, FIREFOX_CONTAINER_COLORS } from '../utils/urlMatcher';
 import { ChromaTestLogo } from './ChromaTestLogo';
 
 interface FirefoxTabSimulatorProps {
@@ -31,8 +32,18 @@ interface FirefoxTabSimulatorProps {
   onAddRuleClick?: () => void;
   onUpdateRule?: (rule: TabColorRule) => void;
   onEditRule?: (rule: TabColorRule) => void;
+  onDeleteRule?: (ruleId: string) => void;
   activeTabOpacity?: number;
   enableFaviconContrastHalo?: boolean;
+  baseThemeMode?: BaseThemeMode;
+  customBaseFrameColor?: string;
+  customBaseToolbarColor?: string;
+  customBaseTextColor?: string;
+  hybridWindowBehavior?: HybridWindowBehavior;
+  hybridTabIndicatorStyle?: HybridTabIndicatorStyle;
+  hybridIndicatorColor?: string;
+  defaultColor?: string;
+  defaultMode?: ColorMode;
   onChangeOpacity?: (opacity: number) => void;
   onToggleHalo?: (enabled: boolean) => void;
 }
@@ -178,16 +189,71 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
   onAddRuleClick,
   onUpdateRule,
   onEditRule,
+  onDeleteRule,
   activeTabOpacity = 0.35,
   enableFaviconContrastHalo = true,
+  baseThemeMode = 'system',
+  customBaseFrameColor = '#1c1b22',
+  customBaseToolbarColor = '#2b2a33',
+  customBaseTextColor = '#fbfbfe',
+  hybridWindowBehavior = 'static_window',
+  hybridTabIndicatorStyle = 'accent_line_and_fill',
+  hybridIndicatorColor,
+  defaultColor = '#37adff',
+  defaultMode = 'container',
   onChangeOpacity,
   onToggleHalo,
 }) => {
   const [tabs, setTabs] = useState<TabSimulatorItem[]>(EXAMPLE_TAB_SCENARIOS[0].tabs);
   const [activeTabId, setActiveTabId] = useState<string>('tab-1');
   const [inputUrl, setInputUrl] = useState<string>(EXAMPLE_TAB_SCENARIOS[0].tabs[0].url);
-  const [browserTheme, setBrowserTheme] = useState<'dark' | 'light'>('dark');
+  const [browserTheme, setBrowserTheme] = useState<'dark' | 'light'>(() => {
+    return baseThemeMode === 'light' ? 'light' : 'dark';
+  });
   const [titleSimulationNotice, setTitleSimulationNotice] = useState<string | null>(null);
+
+  // --- Interactive Extension Popup State ---
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [popupPatternType, setPopupPatternType] = useState<UrlPatternType>('domain');
+  const [popupPatternInput, setPopupPatternInput] = useState('');
+  const [popupColor, setPopupColor] = useState<FirefoxContainerColor>('blue');
+  const [popupHex, setPopupHex] = useState('#37adff');
+  const [popupSymbol, setPopupSymbol] = useState('');
+  const [popupMode, setPopupMode] = useState<ColorMode>('container');
+  const [popupSavedNotice, setPopupSavedNotice] = useState(false);
+
+  useEffect(() => {
+    if (baseThemeMode === 'light') {
+      setBrowserTheme('light');
+    } else if (baseThemeMode === 'dark') {
+      setBrowserTheme('dark');
+    }
+  }, [baseThemeMode]);
+
+  // Compute theme background colors matching Firefox WebExtension behavior
+  const frameBg = baseThemeMode === 'custom'
+    ? customBaseFrameColor
+    : baseThemeMode === 'light' || browserTheme === 'light'
+    ? '#ffffff'
+    : '#1c1b22';
+
+  const tabStripBg = baseThemeMode === 'custom'
+    ? customBaseFrameColor
+    : baseThemeMode === 'light' || browserTheme === 'light'
+    ? '#f0f0f4'
+    : '#11111b';
+
+  const baseToolbarBg = baseThemeMode === 'custom'
+    ? customBaseToolbarColor
+    : baseThemeMode === 'light' || browserTheme === 'light'
+    ? '#ffffff'
+    : '#2b2a33';
+
+  const uiTextColor = baseThemeMode === 'custom'
+    ? customBaseTextColor
+    : baseThemeMode === 'light' || browserTheme === 'light'
+    ? '#15141a'
+    : '#fbfbfe';
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const activeMatch = matchUrlAgainstRules(activeTab?.url || '', rules);
@@ -196,6 +262,105 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
     setActiveTabId(tab.id);
     setInputUrl(tab.url);
     setTitleSimulationNotice(null);
+  };
+
+  // Calculate candidate pattern types from active tab URL
+  const getUrlCandidates = (url: string) => {
+    try {
+      const u = new URL(url);
+      const exactHost = u.hostname;
+      const domain = u.hostname.replace(/^(www\.)/i, '');
+      const prefix = u.origin + u.pathname;
+      const wildcard = '*' + domain + '*';
+      return { exactHost, domain, prefix, wildcard };
+    } catch {
+      return { exactHost: url, domain: url, prefix: url, wildcard: '*' + url + '*' };
+    }
+  };
+
+  const candidates = getUrlCandidates(activeTab?.url || '');
+
+  // Synchronize popup state with active tab / matched rule
+  useEffect(() => {
+    if (activeMatch.matched && activeMatch.rule) {
+      setPopupPatternType(activeMatch.rule.patternType || 'domain');
+      setPopupPatternInput(activeMatch.rule.pattern || candidates.domain);
+      setPopupColor(activeMatch.rule.firefoxContainerColor || 'blue');
+      setPopupHex(activeMatch.rule.color || '#37adff');
+      setPopupSymbol(activeMatch.rule.customEmoji || '');
+      setPopupMode(activeMatch.rule.colorMode || defaultMode || 'container');
+    } else {
+      setPopupPatternType('domain');
+      setPopupPatternInput(candidates.domain);
+      setPopupColor('blue');
+      setPopupHex(defaultColor || '#37adff');
+      setPopupSymbol('');
+      setPopupMode(defaultMode || 'container');
+    }
+  }, [activeTabId, activeMatch.matched, activeMatch.rule?.id]);
+
+  const handleSelectPatternType = (type: UrlPatternType) => {
+    setPopupPatternType(type);
+    if (type === 'domain') setPopupPatternInput(candidates.domain);
+    else if (type === 'exact_host') setPopupPatternInput(candidates.exactHost);
+    else if (type === 'prefix') setPopupPatternInput(candidates.prefix);
+    else if (type === 'wildcard') setPopupPatternInput(candidates.wildcard);
+  };
+
+  const handleSaveRuleFromPopup = () => {
+    const finalPattern = popupPatternInput.trim();
+    if (!finalPattern) return;
+
+    let ruleName = candidates.domain || finalPattern;
+    if (popupSymbol) {
+      ruleName = `${popupSymbol} ${ruleName}`;
+    }
+
+    if (activeMatch.matched && activeMatch.rule) {
+      // Update existing rule
+      const updated: TabColorRule = {
+        ...activeMatch.rule,
+        name: ruleName,
+        patternType: popupPatternType,
+        pattern: finalPattern,
+        color: popupHex,
+        firefoxContainerColor: popupColor,
+        customEmoji: popupSymbol || undefined,
+        colorMode: popupMode,
+        containerName: candidates.domain || 'Container',
+      };
+      if (onUpdateRule) onUpdateRule(updated);
+    } else {
+      // Create new rule
+      const newRule: TabColorRule = {
+        id: `rule-${Date.now()}`,
+        name: ruleName,
+        patternType: popupPatternType,
+        pattern: finalPattern,
+        color: popupHex,
+        firefoxContainerColor: popupColor,
+        firefoxContainerIcon: 'circle',
+        customEmoji: popupSymbol || undefined,
+        enableTitleEmoji: true,
+        enableFaviconEmoji: true,
+        containerName: candidates.domain || 'Container',
+        colorMode: popupMode,
+        accentBorder: true,
+        enabled: true,
+        priority: 1,
+      };
+      if (onUpdateRule) onUpdateRule(newRule);
+    }
+
+    setPopupSavedNotice(true);
+    setTimeout(() => setPopupSavedNotice(false), 2000);
+  };
+
+  const handleDeleteRuleFromPopup = () => {
+    if (activeMatch.matched && activeMatch.rule && onDeleteRule) {
+      onDeleteRule(activeMatch.rule.id);
+      setIsPopupOpen(false);
+    }
   };
 
   const handleNavigate = (e: React.FormEvent) => {
@@ -811,18 +976,20 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
 
       {/* Firefox Browser Window Frame */}
       <div
-        className={`rounded-2xl border shadow-lg overflow-hidden transition-all duration-300 ${
-          browserTheme === 'dark'
-            ? 'bg-[#181825] border-slate-800 text-slate-100'
-            : 'bg-[#e3e5e8] border-slate-300 text-slate-800'
-        }`}
+        className="rounded-2xl border shadow-lg overflow-hidden transition-all duration-300"
+        style={{
+          backgroundColor: frameBg,
+          borderColor: baseThemeMode === 'light' || browserTheme === 'light' ? '#cbd5e1' : '#334155',
+          color: uiTextColor,
+        }}
       >
         {/* Top Window Titlebar & Tab Strip */}
         <div
-          className={`pt-2 px-2 flex items-end gap-1 overflow-x-auto select-none ${
-            browserTheme === 'dark' ? 'bg-[#11111b]' : 'bg-[#d0d3d8]'
-          }`}
-          style={{ minHeight: '44px' }}
+          className="pt-2 px-2 flex items-end gap-1 overflow-x-auto select-none"
+          style={{
+            backgroundColor: tabStripBg,
+            minHeight: '44px',
+          }}
         >
           {/* Window action dots */}
           <div className="flex items-center gap-1.5 px-2 pb-2.5 mr-2 shrink-0">
@@ -843,9 +1010,35 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                 ? match.rule.tabOpacity
                 : (activeTabOpacity !== undefined ? activeTabOpacity : 0.35);
 
-              const activeBg = tabColor 
-                ? hexToRgba(tabColor, opacity)
-                : (browserTheme === 'dark' ? '#1e1e2e' : '#ffffff');
+              // Effective indicator color for active tab
+              const effectiveIndicatorColor = hybridIndicatorColor || tabColor || (isActive ? (defaultColor || '#37adff') : null);
+
+              let tabBg: string | undefined = undefined;
+              let tabBorderTop = '3px solid transparent';
+              let tabBorder = 'none';
+              let tabShadow = 'none';
+
+              if (isActive) {
+                if (hybridWindowBehavior === 'static_window') {
+                  // In static window hybrid mode:
+                  if (hybridTabIndicatorStyle === 'line_only') {
+                    tabBg = baseToolbarBg;
+                    tabBorderTop = effectiveIndicatorColor ? `3px solid ${effectiveIndicatorColor}` : '3px solid transparent';
+                  } else if (hybridTabIndicatorStyle === 'glow_border') {
+                    tabBg = effectiveIndicatorColor ? hexToRgba(effectiveIndicatorColor, opacity * 0.7) : baseToolbarBg;
+                    tabBorder = effectiveIndicatorColor ? `2px solid ${effectiveIndicatorColor}` : 'none';
+                    tabShadow = effectiveIndicatorColor ? `0 0 10px ${effectiveIndicatorColor}66` : 'none';
+                  } else {
+                    // 'accent_line_and_fill' (Standard)
+                    tabBg = effectiveIndicatorColor ? hexToRgba(effectiveIndicatorColor, opacity) : baseToolbarBg;
+                    tabBorderTop = effectiveIndicatorColor ? `3px solid ${effectiveIndicatorColor}` : '3px solid transparent';
+                  }
+                } else {
+                  // Dynamic mode:
+                  tabBg = effectiveIndicatorColor ? hexToRgba(effectiveIndicatorColor, opacity) : baseToolbarBg;
+                  tabBorderTop = effectiveIndicatorColor ? `3px solid ${effectiveIndicatorColor}` : '3px solid transparent';
+                }
+              }
 
               return (
                 <div
@@ -853,16 +1046,15 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                   onClick={() => handleSelectTab(tab)}
                   className={`group relative flex items-center gap-2 px-3 py-2 text-xs font-medium cursor-pointer transition-all duration-150 min-w-[140px] max-w-[220px] rounded-t-lg select-none shrink-0 ${
                     isActive
-                      ? browserTheme === 'dark'
-                        ? 'text-white shadow-sm'
-                        : 'text-slate-900 shadow-sm'
-                      : browserTheme === 'dark'
-                      ? 'text-slate-400 hover:bg-[#181825]/80 hover:text-slate-200'
-                      : 'text-slate-600 hover:bg-[#e3e5e8] hover:text-slate-900'
+                      ? 'shadow-sm font-semibold'
+                      : 'opacity-70 hover:opacity-100 hover:bg-black/10'
                   }`}
                   style={{
-                    backgroundColor: isActive ? activeBg : undefined,
-                    borderTop: tabColor ? `3px solid ${tabColor}` : '3px solid transparent',
+                    backgroundColor: tabBg,
+                    borderTop: tabBorder !== 'none' ? undefined : tabBorderTop,
+                    border: tabBorder !== 'none' ? tabBorder : undefined,
+                    boxShadow: tabShadow !== 'none' ? tabShadow : undefined,
+                    color: uiTextColor,
                   }}
                 >
                   {/* Favicon */}
@@ -940,11 +1132,8 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
             {/* New Tab Button */}
             <button
               onClick={() => handleQuickAdd('https://generic.example.net', 'New Example Tab', '🌐')}
-              className={`p-1.5 mb-1 rounded-md text-xs transition-colors shrink-0 ${
-                browserTheme === 'dark'
-                  ? 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-              }`}
+              className="p-1.5 mb-1 rounded-md text-xs transition-colors shrink-0 opacity-70 hover:opacity-100 hover:bg-black/10"
+              style={{ color: uiTextColor }}
               title="Neuen Beispiel-Tab öffnen"
             >
               <Plus className="w-4 h-4" />
@@ -954,16 +1143,16 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
 
         {/* Firefox Proton Navigation Toolbar */}
         <div
-          className={`px-3 py-2 flex items-center gap-2 border-b transition-colors ${
-            browserTheme === 'dark'
-              ? 'bg-[#1e1e2e] border-slate-800/80'
-              : 'bg-white border-slate-200'
-          }`}
-          style={
-            activeMatch.matched && activeMatch.rule
-              ? { borderBottomColor: activeMatch.rule.color }
-              : {}
-          }
+          className="px-3 py-2 flex items-center gap-2 border-b transition-colors"
+          style={{
+            backgroundColor: (hybridWindowBehavior === 'dynamic_toolbar' && activeMatch.matched && activeMatch.rule?.color)
+              ? hexToRgba(activeMatch.rule.color, 0.4)
+              : baseToolbarBg,
+            borderBottomColor: (hybridWindowBehavior === 'dynamic_toolbar' && activeMatch.matched && activeMatch.rule?.color)
+              ? activeMatch.rule.color
+              : `${uiTextColor}22`,
+            color: uiTextColor,
+          }}
         >
           {/* Navigation Controls */}
           <div className="flex items-center gap-1 text-slate-400 shrink-0">
@@ -1027,14 +1216,310 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
             </div>
           </form>
 
-          {/* Extensions Puzzle Piece */}
-          <div className="flex items-center gap-1 text-slate-400 shrink-0">
+          {/* Extensions Action & Popup Trigger */}
+          <div className="relative flex items-center gap-1 text-slate-400 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsPopupOpen(!isPopupOpen)}
+              className={`p-1.5 rounded-md transition-all flex items-center gap-1.5 border shadow-2xs ${
+                isPopupOpen
+                  ? 'bg-sky-600 text-white border-sky-400 ring-2 ring-sky-400/40'
+                  : activeMatch.matched
+                  ? 'bg-sky-500/15 text-sky-400 border-sky-400/30 hover:bg-sky-500/25'
+                  : 'bg-slate-700/40 text-slate-300 border-slate-600/40 hover:bg-slate-700/60'
+              }`}
+              title="TabChroma Extension Popup öffnen (Muster: Domain/Host/Prefix/Pattern & Farbe festlegen)"
+            >
+              <ChromaTestLogo 
+                color={activeMatch.matched && activeMatch.rule?.color ? activeMatch.rule.color : '#38bdf8'} 
+                size={14} 
+                variant="layers" 
+              />
+              <span className="text-[10.5px] font-bold hidden sm:inline">
+                {isPopupOpen ? 'Popup aktiv' : 'Popup'}
+              </span>
+              {activeMatch.matched && (
+                <span 
+                  className="w-2 h-2 rounded-full shrink-0" 
+                  style={{ backgroundColor: activeMatch.rule?.color || '#38bdf8' }} 
+                />
+              )}
+            </button>
+
+            {/* Firefox Extensions Puzzle Piece */}
             <div
-              className="p-1.5 rounded-md bg-sky-500/10 text-sky-400 border border-sky-400/20 cursor-pointer"
-              title="TabChroma Extension Active"
+              className="p-1.5 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-500/15 cursor-pointer"
+              title="Firefox Erweiterungen"
             >
               <Puzzle className="w-3.5 h-3.5" />
             </div>
+
+            {/* INTERACTIVE EXTENSION POPUP OVERLAY */}
+            {isPopupOpen && (
+              <div 
+                className="absolute top-full right-0 mt-2 w-[340px] rounded-xl border border-slate-700 bg-[#0f172a] text-slate-100 shadow-2xl p-3.5 z-50 text-xs animate-fade-in font-sans"
+                style={{
+                  boxShadow: '0 12px 35px -4px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.08)'
+                }}
+              >
+                {/* Popup Header */}
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sky-400 text-xs flex items-center gap-1.5">
+                      <ChromaTestLogo color="#38bdf8" size={13} variant="layers" />
+                      <span>TabChroma Popup</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {rules.length} Regeln
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPopupOpen(false)}
+                    className="p-1 text-slate-400 hover:text-slate-200 rounded hover:bg-slate-800"
+                    title="Popup schließen"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Status Card for Active Tab */}
+                <div 
+                  className={`p-2.5 rounded-lg border mb-2.5 transition-colors ${
+                    activeMatch.matched && activeMatch.rule
+                      ? 'bg-slate-900 border-slate-700'
+                      : 'bg-slate-900/60 border-slate-800'
+                  }`}
+                  style={{
+                    borderLeftWidth: '4px',
+                    borderLeftColor: activeMatch.matched && activeMatch.rule?.color ? activeMatch.rule.color : '#64748b'
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-white truncate flex items-center gap-1.5">
+                      {activeMatch.matched && activeMatch.rule ? (
+                        <>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeMatch.rule.color }} />
+                          <span className="truncate">{activeMatch.rule.name}</span>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">Keine Regel für diesen Tab</span>
+                      )}
+                    </span>
+                    {activeMatch.matched && activeMatch.rule && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteRuleFromPopup}
+                        className="text-red-400 hover:text-red-300 text-[11px] flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-red-950/40"
+                        title="Diese Regel löschen"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Löschen</span>
+                      </button>
+                    )}
+                  </div>
+                  <div className="font-mono text-[10px] text-slate-400 truncate mt-1">
+                    {activeTab?.url}
+                  </div>
+                  {activeMatch.matched && activeMatch.rule && (
+                    <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                      <span className="px-1 py-0.2 rounded bg-slate-800 font-mono text-[9.5px] text-sky-400">
+                        [{activeMatch.rule.patternType}]
+                      </span>
+                      <span className="truncate font-mono">{activeMatch.rule.pattern}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 1. Muster-Typ (Domain, Exakter Host, Präfix, Pattern) */}
+                <div className="mb-2.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-300 mb-1">
+                    <span>1. Regel-Muster (Pattern-Typ)</span>
+                    <span className="text-[10px] font-normal text-sky-400 truncate max-w-[170px]">
+                      {popupPatternType === 'domain' && 'Alle Subdomains & Pfade'}
+                      {popupPatternType === 'exact_host' && 'Nur diese Subdomain'}
+                      {popupPatternType === 'prefix' && 'Beginnt mit diesem Pfad'}
+                      {popupPatternType === 'wildcard' && 'Freies Wildcard (*)'}
+                    </span>
+                  </div>
+
+                  {/* 4 Segmented Pattern Buttons */}
+                  <div className="grid grid-cols-4 gap-1 mb-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPatternType('domain')}
+                      className={`py-1 px-1 rounded-md text-[10.5px] font-semibold border text-center transition-all ${
+                        popupPatternType === 'domain'
+                          ? 'bg-sky-500/20 text-sky-300 border-sky-400'
+                          : 'bg-slate-900 border-slate-750 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                      title="Matcht die gesamte Domain inkl. aller Subdomains und Pfade"
+                    >
+                      Domain
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPatternType('exact_host')}
+                      className={`py-1 px-1 rounded-md text-[10.5px] font-semibold border text-center transition-all ${
+                        popupPatternType === 'exact_host'
+                          ? 'bg-sky-500/20 text-sky-300 border-sky-400'
+                          : 'bg-slate-900 border-slate-750 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                      title="Matcht ausschließlich diesen exakten Subdomain-Host"
+                    >
+                      Exakt Host
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPatternType('prefix')}
+                      className={`py-1 px-1 rounded-md text-[10.5px] font-semibold border text-center transition-all ${
+                        popupPatternType === 'prefix'
+                          ? 'bg-sky-500/20 text-sky-300 border-sky-400'
+                          : 'bg-slate-900 border-slate-750 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                      title="Matcht alle URLs, die mit diesem Präfix beginnen"
+                    >
+                      Präfix
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPatternType('wildcard')}
+                      className={`py-1 px-1 rounded-md text-[10.5px] font-semibold border text-center transition-all ${
+                        popupPatternType === 'wildcard'
+                          ? 'bg-sky-500/20 text-sky-300 border-sky-400'
+                          : 'bg-slate-900 border-slate-750 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                      title="Freies Wildcard-Muster mit Sternchen (*)"
+                    >
+                      Pattern
+                    </button>
+                  </div>
+
+                  {/* Editable Pattern Input */}
+                  <input
+                    type="text"
+                    value={popupPatternInput}
+                    onChange={(e) => setPopupPatternInput(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950 font-mono text-xs text-sky-200 focus:outline-none focus:border-sky-500"
+                    placeholder="Muster eingeben (z. B. example.com)..."
+                    spellCheck="false"
+                  />
+                </div>
+
+                {/* 2. Tab-Symbol / Emoji */}
+                <div className="mb-2.5">
+                  <div className="text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
+                    <span>2. Tab-Symbol / Emoji</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Optional</span>
+                  </div>
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1">
+                    {[
+                      { emoji: '', label: 'Kein' },
+                      { emoji: '🚀', label: 'Prod' },
+                      { emoji: '⬇️', label: 'Import' },
+                      { emoji: '⚡', label: 'Dev' },
+                      { emoji: '🧪', label: 'Test' },
+                      { emoji: '📦', label: 'Cloud' },
+                      { emoji: '🔒', label: 'Auth' },
+                      { emoji: '💰', label: 'Pay' },
+                    ].map((item) => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setPopupSymbol(item.emoji)}
+                        className={`px-2 py-1 rounded-md text-[11px] border shrink-0 transition-all ${
+                          popupSymbol === item.emoji
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-bold'
+                            : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                        }`}
+                      >
+                        {item.emoji ? `${item.emoji} ${item.label}` : item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Farbe wählen */}
+                <div className="mb-2.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-300 mb-1">
+                    <span>3. Farbe wählen</span>
+                    <span className="text-[10.5px] font-mono text-sky-400 uppercase">
+                      {popupColor} ({popupHex})
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {Object.entries(FIREFOX_CONTAINER_COLORS).map(([cKey, cInfo]) => (
+                      <button
+                        key={cKey}
+                        type="button"
+                        onClick={() => {
+                          setPopupColor(cKey as FirefoxContainerColor);
+                          setPopupHex(cInfo.hex);
+                        }}
+                        style={{ backgroundColor: cInfo.hex }}
+                        className={`h-6 rounded-md text-[10px] font-bold text-white shadow-2xs transition-transform flex items-center justify-center ${
+                          popupColor === cKey ? 'ring-2 ring-white scale-105' : 'opacity-85 hover:opacity-100 hover:scale-102'
+                        }`}
+                      >
+                        {cInfo.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. Farbmodus wählen */}
+                <div className="mb-3">
+                  <div className="text-[11px] font-bold text-slate-300 mb-1">
+                    4. Farbmodus
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {[
+                      { mode: 'container' as ColorMode, label: '📦 Container' },
+                      { mode: 'theme' as ColorMode, label: '🎨 Theme' },
+                      { mode: 'hybrid' as ColorMode, label: '⚡ Hybrid' },
+                    ].map((m) => (
+                      <button
+                        key={m.mode}
+                        type="button"
+                        onClick={() => setPopupMode(m.mode)}
+                        className={`py-1 px-1 rounded-md text-[10.5px] font-semibold border text-center transition-all ${
+                          popupMode === m.mode
+                            ? 'bg-sky-500/20 text-sky-300 border-sky-400'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Save & Action Buttons */}
+                <div className="flex gap-2 pt-1 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={handleSaveRuleFromPopup}
+                    className="flex-1 py-1.5 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>
+                      {popupSavedNotice 
+                        ? '✓ Gespeichert!' 
+                        : activeMatch.matched 
+                        ? '✓ Regel aktualisieren' 
+                        : '✓ Regel für Tab speichern'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPopupOpen(false)}
+                    className="py-1.5 px-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold"
+                  >
+                    Schließen
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1110,22 +1595,43 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                   <span className="text-[11px] text-slate-400">
                     Modus: {activeMatch.rule.colorMode}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsPopupOpen(true)}
+                    className="text-[11px] font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 underline underline-offset-2 mt-0.5"
+                    title="Muster (Domain/Host/Prefix/Pattern), Symbol und Farbe im Popup prüfen"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Im Extension-Popup anpassen</span>
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="p-3 rounded-xl border border-slate-700/50 bg-black/20 flex items-center justify-between text-xs">
+              <div className="p-3 rounded-xl border border-slate-700/50 bg-black/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                 <div className="flex items-center gap-2 text-slate-400">
-                  <Globe className="w-4 h-4 text-slate-400" />
+                  <Globe className="w-4 h-4 text-slate-400 shrink-0" />
                   <span>Keine Regel zugeordnet · Läuft im Standard-Firefox-Container</span>
                 </div>
-                {onAddRuleClick && (
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
-                    onClick={onAddRuleClick}
-                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-white bg-sky-600 hover:bg-sky-500 transition-colors"
+                    type="button"
+                    onClick={() => setIsPopupOpen(true)}
+                    className="px-2.5 py-1 rounded-md text-[11px] font-bold text-white bg-sky-600 hover:bg-sky-500 transition-colors flex items-center gap-1.5 shadow-2xs"
+                    title="Öffnet das Extension-Popup: Wähle Domain, Exakter Host, Prefix oder Pattern"
                   >
-                    + Regel für diese URL definieren
+                    <ChromaTestLogo color="#ffffff" size={12} variant="layers" />
+                    <span>Extension-Popup öffnen</span>
                   </button>
-                )}
+                  {onAddRuleClick && (
+                    <button
+                      type="button"
+                      onClick={onAddRuleClick}
+                      className="px-2 py-1 rounded-md text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                    >
+                      Im Studio
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 

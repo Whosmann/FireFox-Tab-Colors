@@ -161,6 +161,14 @@ async function initExtension() {
         if (DEFAULT_CONFIG.defaultColor) appConfig.defaultColor = DEFAULT_CONFIG.defaultColor;
         if (DEFAULT_CONFIG.defaultContainerColor) appConfig.defaultContainerColor = DEFAULT_CONFIG.defaultContainerColor;
         if (DEFAULT_CONFIG.defaultMode) appConfig.defaultMode = DEFAULT_CONFIG.defaultMode;
+        // Protect user's Firefox theme by disabling window theme overrides
+        appConfig.enableActiveTabTheme = false;
+        // Ensure rules default to container mode so window theme is never touched
+        (appConfig.rules || []).forEach((r) => {
+          if (!r.colorMode || r.colorMode === 'hybrid') {
+            r.colorMode = 'container';
+          }
+        });
       }
 
       currentRules = appConfig.rules || [];
@@ -286,11 +294,113 @@ function hexToRgba(hex, alpha) {
   return hex;
 }
 
-// Apply dynamic theme color to active window
-async function applyThemeForTab(windowId, rule) {
-  if (!appConfig.enableActiveTabTheme) return;
+// Cache base themes per window to preserve user's original Firefox theme and never override frame/toolbar
+const baseThemeCache = new Map(); // windowId -> base colors
 
-  if (rule && rule.color) {
+function getBaseThemePalette() {
+  const mode = appConfig.baseThemeMode || 'system';
+  let isDark = true;
+  if (mode === 'dark') {
+    isDark = true;
+  } else if (mode === 'light') {
+    isDark = false;
+  } else if (mode === 'system') {
+    try {
+      if (typeof window !== 'undefined' && window.matchMedia) {
+        isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+    } catch (e) {
+      isDark = true;
+    }
+  } else if (mode === 'custom') {
+    return {
+      frame: appConfig.customBaseFrameColor || '#1c1b22',
+      frame_inactive: appConfig.customBaseFrameColor || '#2b2a33',
+      toolbar: appConfig.customBaseToolbarColor || '#2b2a33',
+      toolbar_text: appConfig.customBaseTextColor || '#fbfbfe',
+      toolbar_field: appConfig.customBaseFrameColor || '#1c1b22',
+      toolbar_field_text: appConfig.customBaseTextColor || '#fbfbfe',
+      toolbar_field_border: 'rgba(255,255,255,0.2)',
+      tab_background_text: appConfig.customBaseTextColor || '#fbfbfe',
+      icons: appConfig.customBaseTextColor || '#fbfbfe',
+      ntp_background: appConfig.customBaseToolbarColor || '#2b2a33',
+      ntp_text: appConfig.customBaseTextColor || '#fbfbfe',
+      popup: appConfig.customBaseToolbarColor || '#2b2a33',
+      popup_text: appConfig.customBaseTextColor || '#fbfbfe'
+    };
+  }
+
+  if (isDark) {
+    return {
+      frame: '#1c1b22',
+      frame_inactive: '#2b2a33',
+      toolbar: '#2b2a33',
+      toolbar_text: '#fbfbfe',
+      toolbar_field: '#1c1b22',
+      toolbar_field_text: '#fbfbfe',
+      toolbar_field_border: '#38383d',
+      tab_background_text: '#fbfbfe',
+      icons: '#fbfbfe',
+      ntp_background: '#2b2a33',
+      ntp_text: '#fbfbfe',
+      popup: '#2b2a33',
+      popup_text: '#fbfbfe'
+    };
+  } else {
+    return {
+      frame: '#f0f0f4',
+      frame_inactive: '#f9f9fb',
+      toolbar: '#ffffff',
+      toolbar_text: '#15141a',
+      toolbar_field: '#f0f0f4',
+      toolbar_field_text: '#15141a',
+      toolbar_field_border: '#cfcfd8',
+      tab_background_text: '#15141a',
+      icons: '#15141a',
+      ntp_background: '#ffffff',
+      ntp_text: '#15141a',
+      popup: '#ffffff',
+      popup_text: '#15141a'
+    };
+  }
+}
+
+// Clean up window cache on window close
+if (browser.windows && browser.windows.onRemoved) {
+  browser.windows.onRemoved.addListener((windowId) => {
+    baseThemeCache.delete(windowId);
+  });
+}
+
+// Apply dynamic theme color to active window only if explicitly requested
+async function applyThemeForTab(windowId, rule) {
+  // Ensure valid windowId
+  if (!windowId || windowId === (browser.windows ? browser.windows.WINDOW_ID_NONE : -1)) {
+    try {
+      const win = await browser.windows.getCurrent();
+      if (win && win.id) windowId = win.id;
+    } catch (e) {}
+  }
+
+  // 1. Theme-Schutz: Wenn Fenstertheme-Überschreiben deaktiviert ist (Standard & Empfohlen),
+  // bleibt das persönliche Firefox-Theme des Nutzers zu 100% erhalten.
+  // Wir stellen sicher, dass etwaige frühere Theme-Änderungen zurückgesetzt werden und greifen NIEMALS ein.
+  if (!appConfig.enableActiveTabTheme) {
+    if (windowId) {
+      try {
+        await browser.theme.reset(windowId);
+      } catch (e) {}
+    }
+    return;
+  }
+
+  if (!windowId) return;
+
+  // 2. Nur ausführen, wenn die Regel explizit 'theme' oder 'hybrid' Modus verlangt.
+  // Standard-Container-Regeln ('container') verändern das Fenstertheme niemals!
+  const shouldApplyTheme = rule && rule.color && (rule.colorMode === 'theme' || rule.colorMode === 'hybrid');
+
+  if (shouldApplyTheme) {
     const hex = rule.color;
     // Deckkraft des aktiven Tabs reduzieren, damit Favicons mit gleicher Farbe deutlich sichtbar bleiben
     const opacity = (typeof rule.tabOpacity === 'number')
@@ -299,25 +409,51 @@ async function applyThemeForTab(windowId, rule) {
     const tabSelectedColor = hexToRgba(hex, opacity);
 
     try {
+      const baseColors = getBaseThemePalette();
+      const isStaticWindow = (appConfig.hybridWindowBehavior || 'static_window') === 'static_window';
+      const indStyle = appConfig.hybridTabIndicatorStyle || 'accent_line_and_fill';
+      const indicatorColor = appConfig.hybridIndicatorColor || hex;
+
+      let selectedTabColor = tabSelectedColor;
+      if (isStaticWindow && indStyle === 'line_only') {
+        // Fenster & aktiver Tab bleiben in einheitlicher Basisfarbe; nur 3px Proton-Linie hebt sich hervor
+        selectedTabColor = baseColors.toolbar;
+      }
+
+      const colorsToApply = {
+        ...baseColors,
+        tab_selected: selectedTabColor,
+        tab_line: indicatorColor,
+        tab_loading: indicatorColor
+      };
+
+      if (!isStaticWindow) {
+        colorsToApply.toolbar = hexToRgba(hex, 0.45);
+      }
+
       await browser.theme.update(windowId, {
-        colors: {
-          frame: '#181825',
-          toolbar: '#1e1e2e',
-          tab_selected: tabSelectedColor, // Reduzierte Deckkraft / Transparenz
-          tab_line: hex, // 100% kräftige Farblinie am oberen Rand
-          tab_loading: hex,
-          toolbar_field_focus: hex,
-          toolbar_text: '#f8fafc',
-          tab_background_text: '#94a3b8'
-        }
+        colors: colorsToApply
       });
     } catch (e) {
       console.warn('[TabChroma] Theme update error:', e);
     }
   } else {
+    // Unmatched Tab im Hybrid-Modus:
+    // Wendet das stabile Basis-Farbschema ohne Tab-Akzent an,
+    // um ein plötzliches Umschalten zwischen Weiß und Schwarz beim Tab-Wechsel zu verhindern!
     try {
-      await browser.theme.reset(windowId);
-    } catch (e) {}
+      const baseColors = getBaseThemePalette();
+      await browser.theme.update(windowId, {
+        colors: {
+          ...baseColors,
+          tab_line: 'transparent'
+        }
+      });
+    } catch (e) {
+      try {
+        await browser.theme.reset(windowId);
+      } catch (err) {}
+    }
   }
 }
 
@@ -854,56 +990,226 @@ initExtension();
 
   // 4. popup.html
   const popupHtml = `<!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="icons/icon-48.svg">
   <title>TabChroma</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { width: 320px; background: #0f172a; color: #f8fafc; padding: 14px; font-size: 13px; }
-    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1e293b; padding-bottom: 10px; margin-bottom: 12px; }
-    .brand { font-size: 14px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px; }
-    .status-card { background: #1e293b; border-radius: 8px; padding: 12px; border-left: 4px solid #64748b; margin-bottom: 12px; }
-    .status-card.matched { border-left-color: var(--accent-color, #38bdf8); }
-    .url-text { font-family: monospace; font-size: 11px; color: #94a3b8; word-break: break-all; margin-top: 4px; }
-    .rule-name { font-weight: 600; color: #f1f5f9; display: flex; align-items: center; gap: 6px; }
-    .quick-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 8px; }
-    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
-    .color-btn { height: 26px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; font-weight: 600; }
-    .color-btn:hover { filter: brightness(1.2); }
-    .actions { display: flex; gap: 8px; }
-    .btn { flex: 1; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; text-align: center; border: none; }
-    .btn-primary { background: #0284c7; color: white; }
-    .btn-secondary { background: #334155; color: #cbd5e1; }
-    .btn:hover { opacity: 0.9; }
+    :root, body.theme-dark {
+      --bg: #0f172a;
+      --text: #f8fafc;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --muted: #94a3b8;
+      --subtext: #64748b;
+      --input-bg: #090e17;
+      --btn-secondary-bg: #334155;
+      --btn-secondary-text: #cbd5e1;
+    }
+    body.theme-light {
+      --bg: #ffffff;
+      --text: #0f172a;
+      --card-bg: #f8fafc;
+      --border: #e2e8f0;
+      --muted: #475569;
+      --subtext: #64748b;
+      --input-bg: #ffffff;
+      --btn-secondary-bg: #f1f5f9;
+      --btn-secondary-text: #334155;
+    }
+    @media (prefers-color-scheme: light) {
+      body.theme-system {
+        --bg: #ffffff;
+        --text: #0f172a;
+        --card-bg: #f8fafc;
+        --border: #e2e8f0;
+        --muted: #475569;
+        --subtext: #64748b;
+        --input-bg: #ffffff;
+        --btn-secondary-bg: #f1f5f9;
+        --btn-secondary-text: #334155;
+      }
+    }
+    body {
+      width: 360px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 14px;
+      font-size: 12px;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .brand { font-size: 13px; font-weight: 700; color: #0284c7; display: flex; align-items: center; gap: 6px; }
+    
+    .status-card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-left: 4px solid #64748b;
+      margin-bottom: 10px;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .status-card.matched { border-left-color: var(--accent-color, #0284c7); }
+    .status-header { display: flex; align-items: center; justify-content: space-between; }
+    .rule-name { font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 5px; font-size: 12px; }
+    .url-text { font-family: monospace; font-size: 10.5px; color: var(--muted); word-break: break-all; margin-top: 3px; }
+    .btn-delete-rule { background: none; border: none; color: #ef4444; font-size: 11px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+    .btn-delete-rule:hover { background: rgba(239, 68, 68, 0.15); }
+
+    .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--subtext); margin: 8px 0 4px 0; display: flex; align-items: center; justify-content: space-between; }
+    
+    /* Segmented Pattern Type Pills */
+    .pattern-type-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 6px; }
+    .pattern-type-btn {
+      padding: 5px 2px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--muted);
+      font-size: 10.5px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.12s ease;
+    }
+    .pattern-type-btn.active {
+      border-color: #0284c7;
+      background: rgba(2, 132, 199, 0.15);
+      color: #38bdf8;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--text);
+      font-family: monospace;
+      font-size: 11px;
+      margin-bottom: 8px;
+      outline: none;
+    }
+    .form-input:focus { border-color: #0284c7; }
+
+    /* Emoji / Symbol Row */
+    .symbol-row { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; overflow-x: auto; padding-bottom: 2px; }
+    .symbol-btn {
+      padding: 3px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      shrink: 0;
+    }
+    .symbol-btn.active { border-color: #f59e0b; background: rgba(245, 158, 11, 0.15); font-weight: bold; }
+
+    /* Color Grid */
+    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 10px; }
+    .color-btn {
+      height: 26px;
+      border-radius: 6px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #fff;
+      font-weight: 700;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+      transition: all 0.1s;
+    }
+    .color-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+    .color-btn.selected { border-color: #ffffff; box-shadow: 0 0 0 2px #0284c7; }
+
+    .actions { display: flex; gap: 6px; margin-top: 4px; }
+    .btn { flex: 1; padding: 7px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: center; border: none; }
+    .btn-save { background: #0284c7; color: white; }
+    .btn-save:hover { background: #0369a1; }
+    .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-text); border: 1px solid var(--border); }
+    .btn-secondary:hover { opacity: 0.9; }
   </style>
 </head>
-<body>
+<body class="theme-system">
   <div class="header">
     <div class="brand">🎨 TabChroma</div>
-    <span id="rule-count" style="color: #64748b; font-size: 11px;">Rules active</span>
+    <span id="rule-count" style="color: var(--subtext); font-size: 10.5px;"></span>
   </div>
 
+  <!-- Current Tab Status Card -->
   <div id="status-card" class="status-card">
-    <div class="rule-name" id="status-title">Checking tab...</div>
+    <div class="status-header">
+      <div class="rule-name" id="status-title">Aktuelle URL wird geprüft...</div>
+      <button id="btn-delete-rule" class="btn-delete-rule" style="display:none;" title="Diese Regel löschen">🗑️ Löschen</button>
+    </div>
     <div class="url-text" id="status-url"></div>
+    <div id="status-badge" style="font-size:10px; color:var(--muted); margin-top:4px; display:none;"></div>
   </div>
 
-  <div class="quick-title">Quick Color This Site</div>
+  <!-- 1. Muster-Typ (Pattern Type: Domain, Host, Prefix, Pattern) -->
+  <div class="section-label">
+    <span>1. Regel-Muster (Pattern-Typ)</span>
+    <span id="pattern-type-desc" style="font-weight:400; text-transform:none; font-size:10px;"></span>
+  </div>
+  <div class="pattern-type-grid">
+    <button type="button" class="pattern-type-btn active" data-type="domain" title="Matcht die gesamte Domain inkl. aller Subdomains und Pfade">Domain</button>
+    <button type="button" class="pattern-type-btn" data-type="exact_host" title="Matcht nur exakt diesen Subdomain-Host">Exakter Host</button>
+    <button type="button" class="pattern-type-btn" data-type="prefix" title="Matcht alle URLs beginnend mit diesem Pfad">Präfix</button>
+    <button type="button" class="pattern-type-btn" data-type="wildcard" title="Freies Wildcard-Muster mit *">Pattern</button>
+  </div>
+
+  <!-- Editable Pattern Box -->
+  <input type="text" id="pattern-input" class="form-input" placeholder="example.com" spellcheck="false">
+
+  <!-- 2. Tab-Symbol (Optional) -->
+  <div class="section-label">
+    <span>2. Tab-Symbol / Emoji</span>
+    <span style="font-weight:400; text-transform:none; font-size:10px; color:var(--muted);">(Optional)</span>
+  </div>
+  <div class="symbol-row">
+    <button type="button" class="symbol-btn active" data-symbol="">Kein</button>
+    <button type="button" class="symbol-btn" data-symbol="🚀">🚀 Prod</button>
+    <button type="button" class="symbol-btn" data-symbol="⬇️">⬇️ Import</button>
+    <button type="button" class="symbol-btn" data-symbol="📦">📦 Cloud</button>
+    <button type="button" class="symbol-btn" data-symbol="⚡">⚡ Dev</button>
+    <button type="button" class="symbol-btn" data-symbol="🧪">🧪 Test</button>
+    <button type="button" class="symbol-btn" data-symbol="🔒">🔒 Auth</button>
+    <button type="button" class="symbol-btn" data-symbol="💰">💰 Pay</button>
+  </div>
+
+  <!-- 3. Container-Farbe -->
+  <div class="section-label">
+    <span>3. Farbe wählen</span>
+    <span id="selected-color-name" style="font-weight:600; text-transform:none; font-size:10.5px;">Blue</span>
+  </div>
   <div class="color-grid">
-    <button class="color-btn" style="background:#ff4f5e" data-color="red" data-hex="#ff4f5e">Red</button>
-    <button class="color-btn" style="background:#ff9400" data-color="orange" data-hex="#ff9400">Orange</button>
-    <button class="color-btn" style="background:#51cf66" data-color="green" data-hex="#51cf66">Green</button>
-    <button class="color-btn" style="background:#37adff" data-color="blue" data-hex="#37adff">Blue</button>
-    <button class="color-btn" style="background:#00c79a" data-color="turquoise" data-hex="#00c79a">Turq</button>
-    <button class="color-btn" style="background:#9059ff" data-color="purple" data-hex="#9059ff">Purple</button>
-    <button class="color-btn" style="background:#ff4ba0" data-color="pink" data-hex="#ff4ba0">Pink</button>
-    <button class="color-btn" style="background:#ffcb00; color: #000" data-color="yellow" data-hex="#ffcb00">Yellow</button>
+    <button type="button" class="color-btn" style="background:#ff4f5e" data-color="red" data-hex="#ff4f5e">Red</button>
+    <button type="button" class="color-btn" style="background:#ff9400" data-color="orange" data-hex="#ff9400">Orange</button>
+    <button type="button" class="color-btn" style="background:#51cf66" data-color="green" data-hex="#51cf66">Green</button>
+    <button type="button" class="color-btn selected" style="background:#37adff" data-color="blue" data-hex="#37adff">Blue</button>
+    <button type="button" class="color-btn" style="background:#00c79a" data-color="turquoise" data-hex="#00c79a">Turq</button>
+    <button type="button" class="color-btn" style="background:#9059ff" data-color="purple" data-hex="#9059ff">Purple</button>
+    <button type="button" class="color-btn" style="background:#ff4ba0" data-color="pink" data-hex="#ff4ba0">Pink</button>
+    <button type="button" class="color-btn" style="background:#ffcb00; color: #000" data-color="yellow" data-hex="#ffcb00">Yellow</button>
   </div>
 
+  <!-- Actions -->
   <div class="actions">
-    <button id="btn-options" class="btn btn-primary">Open Rules Editor</button>
+    <button type="button" id="btn-save" class="btn btn-save">✓ Regel für Tab speichern</button>
+    <button type="button" id="btn-options" class="btn btn-secondary">Studio</button>
   </div>
 
   <script src="popup.js"></script>
@@ -920,85 +1226,292 @@ initExtension();
   // 5. popup.js
   const popupJs = `/**
  * TabChroma - Popup Script
+ * Allows choosing patternType (Domain, Exact Host, Prefix, Pattern), custom symbol, and color
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
   const statusTitle = document.getElementById('status-title');
   const statusUrl = document.getElementById('status-url');
+  const statusBadge = document.getElementById('status-badge');
   const statusCard = document.getElementById('status-card');
+  const btnDeleteRule = document.getElementById('btn-delete-rule');
+  const btnSave = document.getElementById('btn-save');
   const btnOptions = document.getElementById('btn-options');
   const ruleCountEl = document.getElementById('rule-count');
+  const patternInput = document.getElementById('pattern-input');
+  const patternTypeDesc = document.getElementById('pattern-type-desc');
+  const selectedColorNameEl = document.getElementById('selected-color-name');
 
   let currentTab = null;
+  let currentConfig = null;
+  let activeMatchedRule = null;
+  
+  // Selected state
+  let selectedPatternType = 'domain';
+  let selectedColor = 'blue';
+  let selectedHex = '#37adff';
+  let selectedSymbol = '';
+
+  // Patterns calculated from active tab URL
+  let candidateDomain = '';
+  let candidateExactHost = '';
+  let candidatePrefix = '';
+  let candidateWildcard = '';
+
+  const TYPE_DESCRIPTIONS = {
+    domain: 'Matcht alle Subdomains & Pfade',
+    exact_host: 'Nur diese exakte Subdomain',
+    prefix: 'URL beginnt mit diesem Pfad',
+    wildcard: 'Benutzerdefiniertes Wildcard-Pattern'
+  };
+
+  function updatePatternInputForType(type) {
+    selectedPatternType = type;
+    if (patternTypeDesc) patternTypeDesc.textContent = TYPE_DESCRIPTIONS[type] || '';
+    if (!patternInput) return;
+
+    if (type === 'domain') {
+      patternInput.value = candidateDomain;
+    } else if (type === 'exact_host') {
+      patternInput.value = candidateExactHost;
+    } else if (type === 'prefix') {
+      patternInput.value = candidatePrefix;
+    } else if (type === 'wildcard') {
+      patternInput.value = candidateWildcard;
+    }
+  }
 
   try {
+    currentConfig = await browser.runtime.sendMessage({ action: 'GET_CONFIG' });
+    if (currentConfig) {
+      const themeMode = currentConfig.baseThemeMode || 'system';
+      document.body.className = 'theme-' + themeMode;
+      if (themeMode === 'custom' && currentConfig.customBaseFrameColor) {
+        document.body.style.setProperty('--bg', currentConfig.customBaseFrameColor);
+        document.body.style.setProperty('--card-bg', currentConfig.customBaseToolbarColor || '#2b2a33');
+        document.body.style.setProperty('--text', currentConfig.customBaseTextColor || '#fbfbfe');
+      }
+      if (currentConfig.rules && ruleCountEl) {
+        ruleCountEl.textContent = currentConfig.rules.length + ' Regeln aktiv';
+      }
+      if (currentConfig.defaultColor) {
+        selectedHex = currentConfig.defaultColor;
+      }
+      if (currentConfig.defaultContainerColor) {
+        selectedColor = currentConfig.defaultContainerColor;
+      }
+    }
+
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     currentTab = tabs[0];
+
     if (currentTab && currentTab.url) {
       statusUrl.textContent = currentTab.url;
 
+      try {
+        const urlObj = new URL(currentTab.url);
+        candidateExactHost = urlObj.hostname;
+        candidateDomain = urlObj.hostname.replace(/^(www\.)/i, '');
+        candidatePrefix = urlObj.origin + urlObj.pathname;
+        candidateWildcard = '*' + candidateDomain + '*';
+      } catch (e) {
+        candidateDomain = currentTab.url;
+        candidateExactHost = currentTab.url;
+        candidatePrefix = currentTab.url;
+        candidateWildcard = '*' + currentTab.url + '*';
+      }
+
+      // Check if URL matches an existing rule
       const response = await browser.runtime.sendMessage({
         action: 'MATCH_URL',
         url: currentTab.url,
       });
 
       if (response && response.matched && response.rule) {
-        statusTitle.textContent = '● ' + response.rule.name;
-        statusCard.style.setProperty('--accent-color', response.rule.color);
+        activeMatchedRule = response.rule;
+        statusTitle.textContent = '● ' + activeMatchedRule.name;
+        statusCard.style.setProperty('--accent-color', activeMatchedRule.color);
         statusCard.classList.add('matched');
-      } else {
-        statusTitle.textContent = 'No Color Rule Matched';
-        statusCard.classList.remove('matched');
-      }
-    }
+        if (btnDeleteRule) btnDeleteRule.style.display = 'block';
 
-    const config = await browser.runtime.sendMessage({ action: 'GET_CONFIG' });
-    if (config && config.rules) {
-      ruleCountEl.textContent = config.rules.length + ' rules';
+        if (statusBadge) {
+          statusBadge.style.display = 'block';
+          statusBadge.textContent = 'Muster: [' + activeMatchedRule.patternType + '] ' + activeMatchedRule.pattern;
+        }
+
+        // Prepopulate with existing rule settings
+        selectedPatternType = activeMatchedRule.patternType || 'domain';
+        selectedColor = activeMatchedRule.firefoxContainerColor || 'blue';
+        selectedHex = activeMatchedRule.color || '#37adff';
+        selectedSymbol = activeMatchedRule.customEmoji || '';
+        patternInput.value = activeMatchedRule.pattern;
+        btnSave.textContent = '✓ Regel aktualisieren';
+      } else {
+        statusTitle.textContent = 'Keine Regel für diesen Tab';
+        statusCard.classList.remove('matched');
+        if (btnDeleteRule) btnDeleteRule.style.display = 'none';
+        updatePatternInputForType('domain');
+      }
+
+      // Sync active state on type buttons
+      document.querySelectorAll('.pattern-type-btn').forEach((btn) => {
+        if (btn.getAttribute('data-type') === selectedPatternType) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      // Sync active color button
+      document.querySelectorAll('.color-btn').forEach((btn) => {
+        if (btn.getAttribute('data-color') === selectedColor) {
+          btn.classList.add('selected');
+          if (selectedColorNameEl) selectedColorNameEl.textContent = btn.textContent;
+        } else {
+          btn.classList.remove('selected');
+        }
+      });
+
+      // Sync symbol button
+      document.querySelectorAll('.symbol-btn').forEach((btn) => {
+        if (btn.getAttribute('data-symbol') === selectedSymbol) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
     }
   } catch (err) {
-    statusTitle.textContent = 'Ready';
+    statusTitle.textContent = 'Bereit';
   }
 
-  // Quick color buttons
-  document.querySelectorAll('.color-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (!currentTab || !currentTab.url) return;
-      try {
-        const urlObj = new URL(currentTab.url);
-        const domain = urlObj.hostname;
-        const colorName = btn.getAttribute('data-color');
-        const hex = btn.getAttribute('data-hex');
+  // 1. Listen for Pattern Type switch
+  document.querySelectorAll('.pattern-type-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pattern-type-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const type = btn.getAttribute('data-type') || 'domain';
+      updatePatternInputForType(type);
+    });
+  });
 
-        const config = await browser.runtime.sendMessage({ action: 'GET_CONFIG' });
+  // 2. Listen for Symbol switch
+  document.querySelectorAll('.symbol-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.symbol-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedSymbol = btn.getAttribute('data-symbol') || '';
+    });
+  });
+
+  // 3. Listen for Color switch
+  document.querySelectorAll('.color-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.color-btn').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedColor = btn.getAttribute('data-color') || 'blue';
+      selectedHex = btn.getAttribute('data-hex') || '#37adff';
+      if (selectedColorNameEl) selectedColorNameEl.textContent = btn.textContent;
+      statusCard.style.setProperty('--accent-color', selectedHex);
+    });
+  });
+
+  // 4. Save Rule
+  btnSave?.addEventListener('click', async () => {
+    if (!currentTab || !currentTab.url) return;
+    const finalPattern = patternInput.value.trim();
+    if (!finalPattern) return;
+
+    try {
+      const config = await browser.runtime.sendMessage({ action: 'GET_CONFIG' }) || { rules: [] };
+      let rules = config.rules || [];
+
+      let ruleName = candidateDomain || finalPattern;
+      if (selectedSymbol) {
+        ruleName = selectedSymbol + ' ' + ruleName;
+      }
+
+      if (activeMatchedRule) {
+        // Update existing rule
+        rules = rules.map((r) => {
+          if (r.id === activeMatchedRule.id) {
+            return {
+              ...r,
+              name: ruleName,
+              patternType: selectedPatternType,
+              pattern: finalPattern,
+              color: selectedHex,
+              firefoxContainerColor: selectedColor,
+              customEmoji: selectedSymbol,
+              containerName: candidateDomain || 'Container',
+            };
+          }
+          return r;
+        });
+      } else {
+        // Create new rule
         const newRule = {
           id: 'rule-' + Date.now(),
-          name: domain + ' (' + colorName + ')',
-          patternType: 'domain',
-          pattern: domain,
-          color: hex,
-          firefoxContainerColor: colorName,
+          name: ruleName,
+          patternType: selectedPatternType,
+          pattern: finalPattern,
+          color: selectedHex,
+          firefoxContainerColor: selectedColor,
           firefoxContainerIcon: 'circle',
-          containerName: domain,
-          colorMode: 'hybrid',
+          customEmoji: selectedSymbol,
+          enableTitleEmoji: true,
+          enableFaviconEmoji: true,
+          containerName: candidateDomain || 'Container',
+          colorMode: config.defaultMode || 'container',
           accentBorder: true,
           enabled: true,
           priority: 1,
         };
-
-        config.rules = [newRule, ...(config.rules || [])];
-        await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config });
-
-        statusTitle.textContent = '● ' + newRule.name;
-        statusCard.style.setProperty('--accent-color', hex);
-        statusCard.classList.add('matched');
-      } catch (e) {
-        console.error('Failed to add quick rule:', e);
+        rules = [newRule, ...rules];
       }
-    });
+
+      config.rules = rules;
+      await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config });
+
+      statusTitle.textContent = '● ' + ruleName;
+      statusCard.style.setProperty('--accent-color', selectedHex);
+      statusCard.classList.add('matched');
+      if (statusBadge) {
+        statusBadge.style.display = 'block';
+        statusBadge.textContent = 'Muster: [' + selectedPatternType + '] ' + finalPattern;
+      }
+      if (btnDeleteRule) btnDeleteRule.style.display = 'block';
+      btnSave.textContent = '✓ Gespeichert!';
+      setTimeout(() => { btnSave.textContent = '✓ Regel aktualisieren'; }, 1500);
+    } catch (err) {
+      console.error('Failed to save rule from popup:', err);
+    }
   });
 
-  btnOptions.addEventListener('click', () => {
+  // 5. Delete active rule
+  btnDeleteRule?.addEventListener('click', async () => {
+    if (!activeMatchedRule) return;
+    try {
+      const config = await browser.runtime.sendMessage({ action: 'GET_CONFIG' });
+      if (config && config.rules) {
+        config.rules = config.rules.filter((r) => r.id !== activeMatchedRule.id);
+        await browser.runtime.sendMessage({ action: 'SAVE_CONFIG', config });
+      }
+      activeMatchedRule = null;
+      statusTitle.textContent = 'Regel gelöscht';
+      statusCard.classList.remove('matched');
+      statusCard.style.removeProperty('--accent-color');
+      if (statusBadge) statusBadge.style.display = 'none';
+      if (btnDeleteRule) btnDeleteRule.style.display = 'none';
+      btnSave.textContent = '✓ Regel für Tab speichern';
+      updatePatternInputForType('domain');
+    } catch (err) {
+      console.error('Failed to delete rule from popup:', err);
+    }
+  });
+
+  // 6. Open Rules Studio
+  btnOptions?.addEventListener('click', () => {
     browser.runtime.openOptionsPage();
   });
 });
@@ -1020,26 +1533,70 @@ document.addEventListener('DOMContentLoaded', async () => {
   <title>TabChroma - Firefox URL Tab Color & Container Studio</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: #0b0f19; color: #f8fafc; padding: 24px; line-height: 1.5; font-size: 13px; }
+    :root, body.theme-dark {
+      --bg: #0b0f19;
+      --text: #f8fafc;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --col-bg: #182234;
+      --col-border: #283548;
+      --muted: #94a3b8;
+      --input-bg: #1e293b;
+      --input-border: #374151;
+      --btn-sec-bg: #1e293b;
+      --btn-sec-text: #cbd5e1;
+      --btn-sec-border: #334155;
+    }
+    body.theme-light {
+      --bg: #f8fafc;
+      --text: #0f172a;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --col-bg: #f1f5f9;
+      --col-border: #cbd5e1;
+      --muted: #64748b;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --btn-sec-bg: #f1f5f9;
+      --btn-sec-text: #334155;
+      --btn-sec-border: #cbd5e1;
+    }
+    @media (prefers-color-scheme: light) {
+      body.theme-system {
+        --bg: #f8fafc;
+        --text: #0f172a;
+        --card-bg: #ffffff;
+        --card-border: #e2e8f0;
+        --col-bg: #f1f5f9;
+        --col-border: #cbd5e1;
+        --muted: #64748b;
+        --input-bg: #ffffff;
+        --input-border: #cbd5e1;
+        --btn-sec-bg: #f1f5f9;
+        --btn-sec-text: #334155;
+        --btn-sec-border: #cbd5e1;
+      }
+    }
+    body { background: var(--bg); color: var(--text); padding: 24px; line-height: 1.5; font-size: 13px; transition: background 0.15s ease, color 0.15s ease; }
     .container { max-width: 1080px; margin: 0 auto; }
-    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--card-border); padding-bottom: 16px; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
     h1 { font-size: 20px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
-    .desc { font-size: 13px; color: #94a3b8; margin-top: 3px; }
+    .desc { font-size: 13px; color: var(--muted); margin-top: 3px; }
     .btn { padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
     .btn-primary { background: #0284c7; color: white; }
-    .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+    .btn-secondary { background: var(--btn-sec-bg); color: var(--btn-sec-text); border: 1px solid var(--btn-sec-border); }
     .btn-danger { background: #ef4444; color: white; }
     .btn:hover { opacity: 0.9; }
     .actions-bar { display: flex; gap: 8px; flex-wrap: wrap; }
     
     /* Defaults Card matching Studio Preview */
-    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
-    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1px solid #1f2937; padding-bottom: 12px; }
-    .card-title { font-size: 15px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px; }
-    .card-subtitle { font-size: 12px; color: #94a3b8; margin-top: 3px; }
-    .defaults-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; margin-bottom: 16px; }
-    .default-col { background: #182234; border: 1px solid #283548; border-radius: 8px; padding: 14px; }
-    .col-title { font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1px solid var(--card-border); padding-bottom: 12px; }
+    .card-title { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .card-subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .defaults-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .default-col { background: var(--col-bg); border: 1px solid var(--col-border); border-radius: 8px; padding: 14px; }
+    .col-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
     
     .color-swatch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
     .swatch-btn { height: 28px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
@@ -1174,18 +1731,36 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
           <div id="mode-opt-hybrid" class="mode-radio-box">
             <div class="mode-radio-title">Hybrid (Container + Theme)</div>
-            <div class="mode-radio-desc">Färbt den Container und passt zusätzlich die Firefox-Toolbar dynamisch an.</div>
+            <div class="mode-radio-desc">Färbt den Container und hebt den aktiven Tab mit separatem Farbindikator hervor.</div>
+          </div>
+
+          <div id="def-hybrid-options" style="margin-top: 8px; padding: 8px; background: rgba(147, 51, 234, 0.08); border-radius: 6px; border: 1px solid rgba(147, 51, 234, 0.2); font-size: 11px;">
+            <div style="font-weight: 700; color: var(--text, #f8fafc); margin-bottom: 4px;">Hybrid-Fensterverhalten:</div>
+            <label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer;">
+              <input type="radio" name="opt-hybrid-win" id="opt-hybrid-win-static" value="static_window" checked>
+              <span>Statisches Fenster + Aktiver Tab-Indikator</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="radio" name="opt-hybrid-win" id="opt-hybrid-win-dynamic" value="dynamic_toolbar">
+              <span>Dynamische Toolbar</span>
+            </label>
+            <div style="margin-top: 6px; font-weight: 700; color: var(--text, #f8fafc);">Tab-Indikator Stil:</div>
+            <select id="def-hybrid-indicator-style" class="form-select" style="margin-top:2px; font-size:11px; padding:3px 6px;">
+              <option value="accent_line_and_fill">Farblinie &amp; Tönung</option>
+              <option value="line_only">Nur Farblinie (Minimal)</option>
+              <option value="glow_border">Leucht-Kontur</option>
+            </select>
           </div>
         </div>
 
-        <!-- 3. Browser-Farbschema Schutz -->
+        <!-- 3. Browser-Farbschema Schutz & Minimaler Eingriff -->
         <div class="default-col">
-          <div class="col-title">3. Browser-Farbschema Schutz</div>
+          <div class="col-title">3. Minimaler Eingriff & Theme-Schutz</div>
           <label class="check-label">
             <input type="checkbox" id="def-active-theme">
             <div>
-              <strong>Firefox-Fenstertheme überschreiben</strong>
-              <span>Aktiv: Firefox-Symbolleisten wechseln beim Tab-Wechsel die Farbe.</span>
+              <strong>Firefox-Theme Schutz (Empfohlen: Aus)</strong>
+              <span>Ausgeschaltet: Ihr persönliches Firefox-Theme bleibt immer 100% erhalten. Es werden ausschließlich Seiten-Overlays &amp; Icons gemäß Regeln angewendet.</span>
             </div>
           </label>
           <label class="check-label">
@@ -1202,6 +1777,58 @@ document.addEventListener('DOMContentLoaded', async () => {
               <span>Zeigt farbigen 3px Strich am oberen Rand passender Webseiten.</span>
             </div>
           </label>
+        </div>
+
+        <!-- 4. Basis-Farbschema für Hybrid & Menü -->
+        <div class="default-col">
+          <div class="col-title">4. Basis-Farbschema (Hybrid &amp; Menü)</div>
+          <div style="font-size: 11px; color: var(--muted, #94a3b8); margin-bottom: 8px;">
+            Verhindert harten Weiß-/Schwarz-Wechsel beim Tab-Wechsel und passt das Menü-Design an.
+          </div>
+          <select id="def-base-theme" class="form-select" style="margin-bottom: 8px;">
+            <option value="system">💻 Automatisch (System / Firefox)</option>
+            <option value="dark">🌙 Dunkel (Firefox Dark #1c1b22)</option>
+            <option value="light">☀️ Hell (Firefox Light #ffffff)</option>
+            <option value="custom">🎨 Individuell (Eigene Farben)</option>
+          </select>
+          <div id="custom-theme-fields" style="display: none; gap: 8px; flex-direction: column; margin-top: 8px; padding: 10px; background: var(--card-bg, #0f172a); border-radius: 8px; border: 1px solid var(--col-border, #334155);">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text, #f8fafc); margin-bottom: 2px;">Individuelle Basisfarben:</div>
+            <!-- Rahmen -->
+            <div style="display:flex; align-items:center; justify-content:space-between; gap: 8px; font-size:11px;">
+              <span style="min-width: 55px; color: var(--muted, #94a3b8);">Rahmen:</span>
+              <div style="display: flex; align-items: center; gap: 6px; flex: 1; justify-content: flex-end;">
+                <input type="color" id="def-frame-picker" style="width:26px; height:26px; border:none; cursor:pointer; background:none; border-radius:4px;" value="#1c1b22">
+                <input type="text" id="def-frame-input" maxLength="7" style="width:70px; font-family:monospace; font-size:11px; padding:3px 6px; border-radius:4px; border:1px solid var(--input-border, #475569); background:var(--input-bg, #1e293b); color:var(--text, #f8fafc); text-transform:uppercase;" value="#1C1B22">
+              </div>
+            </div>
+            <!-- Toolbar -->
+            <div style="display:flex; align-items:center; justify-content:space-between; gap: 8px; font-size:11px;">
+              <span style="min-width: 55px; color: var(--muted, #94a3b8);">Toolbar:</span>
+              <div style="display: flex; align-items: center; gap: 6px; flex: 1; justify-content: flex-end;">
+                <input type="color" id="def-toolbar-picker" style="width:26px; height:26px; border:none; cursor:pointer; background:none; border-radius:4px;" value="#2b2a33">
+                <input type="text" id="def-toolbar-input" maxLength="7" style="width:70px; font-family:monospace; font-size:11px; padding:3px 6px; border-radius:4px; border:1px solid var(--input-border, #475569); background:var(--input-bg, #1e293b); color:var(--text, #f8fafc); text-transform:uppercase;" value="#2B2A33">
+              </div>
+            </div>
+            <!-- Text / Icons -->
+            <div style="display:flex; align-items:center; justify-content:space-between; gap: 8px; font-size:11px;">
+              <span style="min-width: 55px; color: var(--muted, #94a3b8);">Schrift:</span>
+              <div style="display: flex; align-items: center; gap: 6px; flex: 1; justify-content: flex-end;">
+                <input type="color" id="def-text-picker" style="width:26px; height:26px; border:none; cursor:pointer; background:none; border-radius:4px;" value="#fbfbfe">
+                <input type="text" id="def-text-input" maxLength="7" style="width:70px; font-family:monospace; font-size:11px; padding:3px 6px; border-radius:4px; border:1px solid var(--input-border, #475569); background:var(--input-bg, #1e293b); color:var(--text, #f8fafc); text-transform:uppercase;" value="#FBFBFE">
+              </div>
+            </div>
+
+            <!-- Theme Export / Import Buttons für Kollegen -->
+            <div style="display:flex; gap:6px; margin-top:8px; border-top: 1px solid var(--col-border, #334155); padding-top: 8px;">
+              <button type="button" id="btn-export-theme" class="btn btn-secondary" style="font-size:10px; padding:4px 8px; flex:1;" title="Exportiert nur die Theme-Farben als JSON-Datei für Kollegen">
+                📤 Theme exportieren
+              </button>
+              <button type="button" id="btn-import-theme" class="btn btn-secondary" style="font-size:10px; padding:4px 8px; flex:1;" title="Importiert ein Theme von einem Kollegen">
+                📥 Theme importieren
+              </button>
+              <input type="file" id="theme-file-addon-input" accept=".json,application/json" style="display:none;">
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1947,12 +2574,28 @@ function renderDefaultsCard() {
   // Mode radio cards
   const modeContainer = document.getElementById('mode-opt-container');
   const modeHybrid = document.getElementById('mode-opt-hybrid');
+  const hybridOptions = document.getElementById('def-hybrid-options');
   if (appConfig.defaultMode === 'hybrid') {
     modeHybrid?.classList.add('selected');
     modeContainer?.classList.remove('selected');
+    if (hybridOptions) hybridOptions.style.display = 'block';
   } else {
     modeContainer?.classList.add('selected');
     modeHybrid?.classList.remove('selected');
+    if (hybridOptions) hybridOptions.style.display = 'none';
+  }
+
+  // Hybrid sub-options
+  const winBehavior = appConfig.hybridWindowBehavior || 'static_window';
+  const optStatic = document.getElementById('opt-hybrid-win-static');
+  const optDynamic = document.getElementById('opt-hybrid-win-dynamic');
+  if (optStatic && optDynamic) {
+    if (winBehavior === 'dynamic_toolbar') optDynamic.checked = true;
+    else optStatic.checked = true;
+  }
+  const indStyle = document.getElementById('def-hybrid-indicator-style');
+  if (indStyle) {
+    indStyle.value = appConfig.hybridTabIndicatorStyle || 'accent_line_and_fill';
   }
 
   if (defActiveTheme) defActiveTheme.checked = !!appConfig.enableActiveTabTheme;
@@ -1969,9 +2612,164 @@ function renderDefaultsCard() {
   const isHalo = appConfig.enableFaviconContrastHalo !== false;
   if (defHalo) defHalo.checked = isHalo;
   updateHaloPreview(isHalo);
+
+  // Base theme mode
+  const defBaseTheme = document.getElementById('def-base-theme');
+  const customThemeFields = document.getElementById('custom-theme-fields');
+  const defFramePicker = document.getElementById('def-frame-picker');
+  const defFrameInput = document.getElementById('def-frame-input');
+  const defToolbarPicker = document.getElementById('def-toolbar-picker');
+  const defToolbarInput = document.getElementById('def-toolbar-input');
+  const defTextPicker = document.getElementById('def-text-picker');
+  const defTextInput = document.getElementById('def-text-input');
+
+  const currentThemeMode = appConfig.baseThemeMode || 'system';
+  if (defBaseTheme) defBaseTheme.value = currentThemeMode;
+  if (customThemeFields) {
+    customThemeFields.style.display = (currentThemeMode === 'custom') ? 'flex' : 'none';
+  }
+  const frameColor = appConfig.customBaseFrameColor || '#1c1b22';
+  const toolbarColor = appConfig.customBaseToolbarColor || '#2b2a33';
+  const textColor = appConfig.customBaseTextColor || '#fbfbfe';
+
+  if (defFramePicker) defFramePicker.value = frameColor;
+  if (defFrameInput) defFrameInput.value = frameColor.toUpperCase();
+  if (defToolbarPicker) defToolbarPicker.value = toolbarColor;
+  if (defToolbarInput) defToolbarInput.value = toolbarColor.toUpperCase();
+  if (defTextPicker) defTextPicker.value = textColor;
+  if (defTextInput) defTextInput.value = textColor.toUpperCase();
+
+  // Apply base theme mode directly to options page layout!
+  document.body.className = 'theme-' + currentThemeMode;
 }
 
 // Defaults listeners
+document.getElementById('def-base-theme')?.addEventListener('change', (e) => {
+  appConfig.baseThemeMode = e.target.value;
+  const customThemeFields = document.getElementById('custom-theme-fields');
+  if (customThemeFields) {
+    customThemeFields.style.display = (e.target.value === 'custom') ? 'flex' : 'none';
+  }
+  document.body.className = 'theme-' + e.target.value;
+});
+
+// Frame color sync
+document.getElementById('def-frame-picker')?.addEventListener('input', (e) => {
+  appConfig.customBaseFrameColor = e.target.value;
+  const inp = document.getElementById('def-frame-input');
+  if (inp) inp.value = e.target.value.toUpperCase();
+});
+document.getElementById('def-frame-input')?.addEventListener('input', (e) => {
+  let val = e.target.value.trim();
+  if (!val.startsWith('#')) val = '#' + val;
+  if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+    appConfig.customBaseFrameColor = val;
+    const picker = document.getElementById('def-frame-picker');
+    if (picker) picker.value = val;
+  }
+});
+
+// Toolbar color sync
+document.getElementById('def-toolbar-picker')?.addEventListener('input', (e) => {
+  appConfig.customBaseToolbarColor = e.target.value;
+  const inp = document.getElementById('def-toolbar-input');
+  if (inp) inp.value = e.target.value.toUpperCase();
+});
+document.getElementById('def-toolbar-input')?.addEventListener('input', (e) => {
+  let val = e.target.value.trim();
+  if (!val.startsWith('#')) val = '#' + val;
+  if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+    appConfig.customBaseToolbarColor = val;
+    const picker = document.getElementById('def-toolbar-picker');
+    if (picker) picker.value = val;
+  }
+});
+
+// Text color sync
+document.getElementById('def-text-picker')?.addEventListener('input', (e) => {
+  appConfig.customBaseTextColor = e.target.value;
+  const inp = document.getElementById('def-text-input');
+  if (inp) inp.value = e.target.value.toUpperCase();
+});
+document.getElementById('def-text-input')?.addEventListener('input', (e) => {
+  let val = e.target.value.trim();
+  if (!val.startsWith('#')) val = '#' + val;
+  if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+    appConfig.customBaseTextColor = val;
+    const picker = document.getElementById('def-text-picker');
+    if (picker) picker.value = val;
+  }
+});
+
+// Hybrid options listeners
+document.getElementById('opt-hybrid-win-static')?.addEventListener('change', () => {
+  appConfig.hybridWindowBehavior = 'static_window';
+  saveConfigToStorage();
+});
+document.getElementById('opt-hybrid-win-dynamic')?.addEventListener('change', () => {
+  appConfig.hybridWindowBehavior = 'dynamic_toolbar';
+  saveConfigToStorage();
+});
+document.getElementById('def-hybrid-indicator-style')?.addEventListener('change', (e) => {
+  appConfig.hybridTabIndicatorStyle = e.target.value;
+  saveConfigToStorage();
+});
+
+// Theme export button for colleagues
+document.getElementById('btn-export-theme')?.addEventListener('click', () => {
+  const themePkg = {
+    format: 'tabchroma-theme',
+    version: '1.0',
+    themeName: 'TabChroma Custom Theme',
+    createdAt: new Date().toISOString(),
+    baseThemeMode: appConfig.baseThemeMode || 'custom',
+    customBaseFrameColor: appConfig.customBaseFrameColor || '#1c1b22',
+    customBaseToolbarColor: appConfig.customBaseToolbarColor || '#2b2a33',
+    customBaseTextColor: appConfig.customBaseTextColor || '#fbfbfe',
+    defaultColor: appConfig.defaultColor || '#37adff',
+    activeTabOpacity: appConfig.activeTabOpacity ?? 0.35,
+    enableFaviconContrastHalo: appConfig.enableFaviconContrastHalo !== false,
+    hybridWindowBehavior: appConfig.hybridWindowBehavior || 'static_window',
+    hybridTabIndicatorStyle: appConfig.hybridTabIndicatorStyle || 'accent_line_and_fill',
+  };
+  const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(themePkg, null, 2));
+  const a = document.createElement('a');
+  a.setAttribute('href', dataStr);
+  a.setAttribute('download', 'tabchroma-theme.json');
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
+// Theme import button for colleagues
+document.getElementById('btn-import-theme')?.addEventListener('click', () => {
+  document.getElementById('theme-file-addon-input')?.click();
+});
+
+document.getElementById('theme-file-addon-input')?.addEventListener('change', (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (data.customBaseFrameColor) appConfig.customBaseFrameColor = data.customBaseFrameColor;
+      if (data.customBaseToolbarColor) appConfig.customBaseToolbarColor = data.customBaseToolbarColor;
+      if (data.customBaseTextColor) appConfig.customBaseTextColor = data.customBaseTextColor;
+      if (data.defaultColor) appConfig.defaultColor = data.defaultColor;
+      if (typeof data.activeTabOpacity === 'number') appConfig.activeTabOpacity = data.activeTabOpacity;
+      if (typeof data.enableFaviconContrastHalo === 'boolean') appConfig.enableFaviconContrastHalo = data.enableFaviconContrastHalo;
+      appConfig.baseThemeMode = 'custom';
+      await saveConfigToStorage();
+      renderDefaultsCard();
+      alert('Theme erfolgreich importiert und angewendet!');
+    } catch (err) {
+      alert('Fehler beim Importieren der Theme-Datei: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+});
+
 document.querySelectorAll('#def-color-grid .swatch-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     const col = btn.getAttribute('data-color');
@@ -2046,6 +2844,12 @@ document.getElementById('btn-save-defaults')?.addEventListener('click', async ()
   if (defOpacity) appConfig.activeTabOpacity = parseFloat(defOpacity.value);
   const defHalo = document.getElementById('def-favicon-halo');
   if (defHalo) appConfig.enableFaviconContrastHalo = defHalo.checked;
+  const defBaseTheme = document.getElementById('def-base-theme');
+  if (defBaseTheme) appConfig.baseThemeMode = defBaseTheme.value;
+  const defFramePicker = document.getElementById('def-frame-picker');
+  if (defFramePicker) appConfig.customBaseFrameColor = defFramePicker.value;
+  const defToolbarPicker = document.getElementById('def-toolbar-picker');
+  if (defToolbarPicker) appConfig.customBaseToolbarColor = defToolbarPicker.value;
 
   await saveConfigToStorage();
 
