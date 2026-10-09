@@ -1561,6 +1561,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       --btn-sec-text: #334155;
       --btn-sec-border: #cbd5e1;
     }
+    body.theme-custom {
+      background: var(--bg);
+      color: var(--text);
+    }
     @media (prefers-color-scheme: light) {
       body.theme-system {
         --bg: #f8fafc;
@@ -1602,76 +1606,76 @@ document.addEventListener('DOMContentLoaded', async () => {
     .swatch-btn { height: 28px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
     .swatch-btn.selected { border-color: #fff; box-shadow: 0 0 0 2px #38bdf8; }
     
-    .mode-radio-box { border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; background: #1e293b; }
-    .mode-radio-box.selected { border-color: #38bdf8; background: rgba(56,189,248,0.1); }
-    .mode-radio-title { font-weight: 700; font-size: 12px; color: #f8fafc; margin-bottom: 2px; }
-    .mode-radio-desc { font-size: 11px; color: #94a3b8; line-height: 1.3; }
+    .mode-radio-box { border: 1px solid var(--col-border); border-radius: 6px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; background: var(--input-bg); }
+    .mode-radio-box.selected { border-color: #38bdf8; background: rgba(56,189,248,0.15); }
+    .mode-radio-title { font-weight: 700; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+    .mode-radio-desc { font-size: 11px; color: var(--muted); line-height: 1.3; }
     
-    .check-label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #cbd5e1; cursor: pointer; margin-bottom: 10px; }
+    .check-label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text); cursor: pointer; margin-bottom: 10px; }
     .check-label input { margin-top: 2px; }
-    .check-label strong { color: #f8fafc; display: block; }
-    .check-label span { font-size: 11px; color: #94a3b8; }
+    .check-label strong { color: var(--text); display: block; }
+    .check-label span { font-size: 11px; color: var(--muted); }
 
-    .matcher-sample-chip { background: #1e293b; color: #94a3b8; border: 1px solid #334155; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-family: monospace; cursor: pointer; transition: all 0.15s ease; }
-    .matcher-sample-chip:hover { background: #334155; color: #38bdf8; border-color: #38bdf8; }
+    .matcher-sample-chip { background: var(--input-bg); color: var(--muted); border: 1px solid var(--col-border); border-radius: 4px; padding: 2px 7px; font-size: 11px; font-family: monospace; cursor: pointer; transition: all 0.15s ease; }
+    .matcher-sample-chip:hover { background: var(--btn-sec-bg); color: #38bdf8; border-color: #38bdf8; }
     
-    .tip-banner { background: #0c4a6e; border: 1px solid #0284c7; border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #bae6fd; display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    .tip-banner { background: var(--col-bg); border: 1px solid var(--col-border); border-radius: 8px; padding: 10px 14px; font-size: 11px; color: var(--text); display: flex; align-items: center; gap: 8px; margin-top: 14px; }
     
     /* Table */
-    table { width: 100%; border-collapse: collapse; background: #111827; border-radius: 8px; overflow: hidden; border: 1px solid #1f2937; margin-top: 12px; }
-    th { text-align: left; padding: 11px 13px; font-size: 11px; text-transform: uppercase; color: #94a3b8; background: #1f2937; letter-spacing: 0.05em; }
-    td { padding: 11px 13px; border-top: 1px solid #1f2937; font-size: 12px; vertical-align: middle; }
+    table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: 8px; overflow: hidden; border: 1px solid var(--card-border); margin-top: 12px; }
+    th { text-align: left; padding: 11px 13px; font-size: 11px; text-transform: uppercase; color: var(--muted); background: var(--col-bg); border-bottom: 1px solid var(--card-border); letter-spacing: 0.05em; }
+    td { padding: 11px 13px; border-top: 1px solid var(--card-border); font-size: 12px; vertical-align: middle; color: var(--text); }
     .color-swatch { width: 15px; height: 15px; border-radius: 4px; display: inline-block; vertical-align: middle; margin-right: 6px; }
-    .pattern-code { font-family: monospace; background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #38bdf8; word-break: break-all; }
-    .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #374151; color: #d1d5db; font-family: monospace; }
+    .pattern-code { font-family: monospace; background: var(--input-bg); padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #38bdf8; word-break: break-all; border: 1px solid var(--col-border); }
+    .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: var(--input-bg); color: var(--text); font-family: monospace; border: 1px solid var(--col-border); }
     .badge-sym { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: #0369a1; color: #e0f2fe; font-weight: 700; margin-left: 4px; }
     .btn-cell { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
     .edit-btn { background: #0284c7; color: white; padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
     .del-btn { background: #ef4444; color: white; padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
-    .priority-btn { background: #1f2937; color: #94a3b8; border: 1px solid #374151; border-radius: 4px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-    .priority-btn:hover { color: #fff; background: #374151; }
+    .priority-btn { background: var(--btn-sec-bg); color: var(--muted); border: 1px solid var(--btn-sec-border); border-radius: 4px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .priority-btn:hover { color: var(--text); background: var(--input-bg); }
     tr.selected-row { background: rgba(56, 189, 248, 0.12) !important; }
-    .bulk-btn-group { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid #334155; }
-    .bulk-sub-btn { background: #1e293b; color: #cbd5e1; border: none; padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
-    .bulk-sub-btn:hover { background: #334155; color: #fff; }
+    .bulk-btn-group { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--col-border); }
+    .bulk-sub-btn { background: var(--btn-sec-bg); color: var(--btn-sec-text); border: none; padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .bulk-sub-btn:hover { background: var(--input-bg); color: var(--text); }
 
     /* Modals */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(3px); }
     .modal-overlay.active { display: flex; }
-    .modal { background: #111827; border: 1px solid #374151; border-radius: 12px; width: 100%; max-width: 620px; max-height: 92vh; overflow-y: auto; padding: 22px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 12px; margin-bottom: 16px; }
-    .modal-title { font-size: 16px; font-weight: 700; color: #f8fafc; }
-    .close-btn { background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; line-height: 1; }
-    .close-btn:hover { color: #fff; }
+    .modal { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; width: 100%; max-width: 620px; max-height: 92vh; overflow-y: auto; padding: 22px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); color: var(--text); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--card-border); padding-bottom: 12px; margin-bottom: 16px; }
+    .modal-title { font-size: 16px; font-weight: 700; color: var(--text); }
+    .close-btn { background: transparent; border: none; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; }
+    .close-btn:hover { color: var(--text); }
     .form-group { margin-bottom: 13px; }
-    .form-label { display: block; font-size: 11px; font-weight: 700; color: #cbd5e1; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
-    .form-input, .form-select, .form-textarea { width: 100%; padding: 8px 11px; background: #1e293b; border: 1px solid #374151; border-radius: 6px; color: #f8fafc; font-size: 12px; outline: none; }
+    .form-label { display: block; font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .form-input, .form-select, .form-textarea { width: 100%; padding: 8px 11px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; color: var(--text); font-size: 12px; outline: none; }
     .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: #38bdf8; }
-    .form-hint { font-size: 11px; color: #64748b; margin-top: 3px; }
+    .form-hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
     .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 5px; }
-    .icon-btn { background: #1e293b; border: 1px solid #374151; border-radius: 6px; padding: 5px 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #cbd5e1; }
+    .icon-btn { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 5px 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: var(--text); }
     .icon-btn.selected { background: rgba(56, 189, 248, 0.2); border-color: #38bdf8; color: #38bdf8; font-weight: 700; }
     .icon-sym { font-size: 15px; }
     .icon-lbl { font-size: 10px; margin-top: 2px; }
 
     /* Realistic Tab Preview in Modal */
-    .preview-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; margin-top: 14px; }
-    .preview-header { font-size: 11px; font-weight: 700; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; display: flex; justify-content: space-between; }
-    .sim-tab-bar { background: #1e1e2e; padding: 6px 8px 0 8px; border-radius: 6px 6px 0 0; display: flex; align-items: flex-end; }
-    .sim-tab { background: #2d2d3f; border-radius: 6px 6px 0 0; padding: 6px 12px; display: inline-flex; align-items: center; gap: 8px; border-top: 3px solid #37adff; color: #f8fafc; font-size: 12px; font-weight: 600; box-shadow: 0 -2px 5px rgba(0,0,0,0.3); }
+    .preview-card { background: var(--col-bg); border: 1px solid var(--col-border); border-radius: 8px; padding: 12px; margin-top: 14px; }
+    .preview-header { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; display: flex; justify-content: space-between; }
+    .sim-tab-bar { background: var(--input-bg); padding: 6px 8px 0 8px; border-radius: 6px 6px 0 0; display: flex; align-items: flex-end; }
+    .sim-tab { background: var(--card-bg); border-radius: 6px 6px 0 0; padding: 6px 12px; display: inline-flex; align-items: center; gap: 8px; border-top: 3px solid #37adff; color: var(--text); font-size: 12px; font-weight: 600; box-shadow: 0 -2px 5px rgba(0,0,0,0.3); }
     .sim-favicon { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; }
     .sim-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
     .sim-pill { background: rgba(55,173,255,0.2); border: 1px solid #37adff; color: #38bdf8; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 8px; font-weight: 600; }
     
-    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 1px solid #1f2937; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--card-border); }
     
     /* Tabs inside Import Modal */
-    .tab-nav { display: flex; gap: 4px; border-bottom: 1px solid #374151; margin-bottom: 14px; }
-    .tab-nav-btn { padding: 7px 14px; border: none; background: transparent; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab-nav { display: flex; gap: 4px; border-bottom: 1px solid var(--card-border); margin-bottom: 14px; }
+    .tab-nav-btn { padding: 7px 14px; border: none; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
     .tab-nav-btn.active { color: #38bdf8; border-bottom-color: #38bdf8; }
-    .stats-card { background: #182234; border: 1px solid #283548; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; }
-    .conflict-box { background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; max-height: 140px; overflow-y: auto; font-size: 11px; margin-top: 8px; }
-    .conflict-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #374151; }
+    .stats-card { background: var(--col-bg); border: 1px solid var(--col-border); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: var(--text); }
+    .conflict-box { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 10px; max-height: 140px; overflow-y: auto; font-size: 11px; margin-top: 8px; color: var(--text); }
+    .conflict-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--card-border); }
   </style>
 </head>
 <body>
@@ -1785,14 +1789,60 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div style="font-size: 11px; color: var(--muted, #94a3b8); margin-bottom: 8px;">
             Verhindert harten Weiß-/Schwarz-Wechsel beim Tab-Wechsel und passt das Menü-Design an.
           </div>
+          
+          <label style="display:block; font-size:11px; font-weight:700; color:var(--text); margin-bottom:3px;">
+            Farbschema-Modus:
+          </label>
           <select id="def-base-theme" class="form-select" style="margin-bottom: 8px;">
             <option value="system">💻 Automatisch (System / Firefox)</option>
             <option value="dark">🌙 Dunkel (Firefox Dark #1c1b22)</option>
             <option value="light">☀️ Hell (Firefox Light #ffffff)</option>
-            <option value="custom">🎨 Individuell (Eigene Farben)</option>
+            <option value="custom">🎨 Individuell (Eigene Farben &amp; Vorlagen)</option>
           </select>
+
+          <!-- Theme-Vorlagen (Presets) Dropdown -->
+          <div style="margin-top: 10px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="def-theme-preset" style="font-size: 11px; font-weight: 700; color: var(--text);">
+                ✨ Theme-Vorlagen (Presets):
+              </label>
+              <span id="lbl-preset-badge" style="font-size: 10px; color: var(--muted); font-weight: 600;"></span>
+            </div>
+            <select id="def-theme-preset" class="form-select" style="margin-bottom: 8px;">
+              <option value="">-- Theme-Vorlage auswählen --</option>
+              <optgroup label="🎨 Beliebte Theme-Vorlagen">
+                <option value="catppuccin-mocha">🌸 Catppuccin Mocha (Pastell / Slate)</option>
+                <option value="nord-aurora">❄️ Nord Aurora (Polar Cyan &amp; Frost)</option>
+                <option value="dracula-pro">🧛 Dracula Dark (Pink &amp; Violett)</option>
+                <option value="tokyo-night">🌃 Tokyo Night (Neon &amp; Nachtblau)</option>
+                <option value="oled-midnight">⬛ OLED Pure Black (Tiefschwarz #000000)</option>
+                <option value="firefox-proton-dark">🦊 Firefox Dark Pure (#1c1b22)</option>
+                <option value="clean-light">☀️ Firefox Light Pure (#ffffff)</option>
+              </optgroup>
+              <optgroup id="optgroup-saved-themes" label="💾 Gespeicherte Vorlagen">
+              </optgroup>
+            </select>
+          </div>
+
           <div id="custom-theme-fields" style="display: none; gap: 8px; flex-direction: column; margin-top: 8px; padding: 10px; background: var(--card-bg, #0f172a); border-radius: 8px; border: 1px solid var(--col-border, #334155);">
-            <div style="font-size: 11px; font-weight: 700; color: var(--text, #f8fafc); margin-bottom: 2px;">Individuelle Basisfarben:</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+              <div style="font-size: 11px; font-weight: 700; color: var(--text, #f8fafc);">Individuelle Basisfarben:</div>
+              <button type="button" id="btn-save-as-preset" class="btn btn-secondary" style="font-size:10px; padding:2px 7px;" title="Aktuelle Farbkombination als eigene Vorlage speichern">
+                💾 Als Vorlage speichern
+              </button>
+            </div>
+
+            <!-- Schnellauswahl-Chips für Vorlagen -->
+            <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
+              <button type="button" class="btn-quick-theme" data-theme="catppuccin-mocha" style="font-size:10px; padding:3px 6px; border-radius:4px; border:1px solid var(--col-border); background:var(--input-bg); color:var(--text); cursor:pointer;">🌸 Catppuccin</button>
+              <button type="button" class="btn-quick-theme" data-theme="nord-aurora" style="font-size:10px; padding:3px 6px; border-radius:4px; border:1px solid var(--col-border); background:var(--input-bg); color:var(--text); cursor:pointer;">❄️ Nord</button>
+              <button type="button" class="btn-quick-theme" data-theme="dracula-pro" style="font-size:10px; padding:3px 6px; border-radius:4px; border:1px solid var(--col-border); background:var(--input-bg); color:var(--text); cursor:pointer;">🧛 Dracula</button>
+              <button type="button" class="btn-quick-theme" data-theme="tokyo-night" style="font-size:10px; padding:3px 6px; border-radius:4px; border:1px solid var(--col-border); background:var(--input-bg); color:var(--text); cursor:pointer;">🌃 Tokyo</button>
+              <button type="button" class="btn-quick-theme" data-theme="oled-midnight" style="font-size:10px; padding:3px 6px; border-radius:4px; border:1px solid var(--col-border); background:var(--input-bg); color:var(--text); cursor:pointer;">⬛ OLED</button>
+              <button type="button" class="btn-quick-theme" data-theme="firefox-proton-dark" style="font-size:10px; padding:3px 6px; border-radius:4px; border:1px solid var(--col-border); background:var(--input-bg); color:var(--text); cursor:pointer;">🦊 Dark</button>
+              <button type="button" class="btn-quick-theme" data-theme="clean-light" style="font-size:10px; padding:3px 6px; border-radius:4px; border:1px solid var(--col-border); background:var(--input-bg); color:var(--text); cursor:pointer;">☀️ Hell</button>
+            </div>
+
             <!-- Rahmen -->
             <div style="display:flex; align-items:center; justify-content:space-between; gap: 8px; font-size:11px;">
               <span style="min-width: 55px; color: var(--muted, #94a3b8);">Rahmen:</span>
@@ -1833,45 +1883,101 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
 
       <!-- 4. Deckkraft des aktiven Tabs & Favicon-Kontrast -->
-      <div style="margin-top: 14px; padding: 12px 14px; background: #182234; border: 1px solid #283548; border-radius: 8px; margin-bottom: 16px;">
+      <div style="margin-top: 14px; padding: 14px 16px; background: var(--col-bg, #182234); border: 1px solid var(--col-border, #283548); border-radius: 8px; margin-bottom: 16px;">
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
           <div>
-            <div style="font-size: 12px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px;">
-              <span>🔍 Deckkraft des aktiven Tabs (Favicon-Kontrast)</span>
-              <span id="lbl-opacity-val" style="background:#0369a1; color:#e0f2fe; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700;">35%</span>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text, #f8fafc); display: flex; align-items: center; gap: 6px;">
+              <span>🔍 Deckkraft des aktiven Tabs &amp; Favicon-Erkennbarkeit</span>
+              <span id="lbl-opacity-val" style="background:#0369a1; color:#e0f2fe; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700;">35% Deckkraft</span>
             </div>
-            <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
-              Reduziert die Deckkraft des aktiven Tabs, damit Favicons mit gleicher Farbe wie der Tab (z. B. rotes Icon auf rotem Tab) sichtbar bleiben.
+            <div style="font-size: 11px; color: var(--muted, #94a3b8); margin-top: 3px;">
+              Reduziert die Deckkraft des aktiven Tabs, damit Favicons mit gleicher Farbe wie der Tab (z. B. rotes Symbol auf rotem Tab) sichtbar bleiben.
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <input type="range" id="def-opacity" min="0.15" max="1.0" step="0.05" value="0.35" style="width: 130px; cursor: pointer;">
-            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.25" style="font-size:10px; padding:3px 6px;">25%</button>
-            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.35" style="font-size:10px; padding:3px 6px;">35%</button>
-            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.50" style="font-size:10px; padding:3px 6px;">50%</button>
-            <button type="button" class="btn btn-secondary op-preset-btn" data-val="1.00" style="font-size:10px; padding:3px 6px;">100%</button>
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.25" style="font-size:11px; padding:3px 8px;">25% Dezent</button>
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.35" style="font-size:11px; padding:3px 8px;">35% Empfohlen</button>
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.50" style="font-size:11px; padding:3px 8px;">50% Ausgewogen</button>
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="0.75" style="font-size:11px; padding:3px 8px;">75% Kräftig</button>
+            <button type="button" class="btn btn-secondary op-preset-btn" data-val="1.00" style="font-size:11px; padding:3px 8px;">100% Vollflächig</button>
           </div>
         </div>
 
-        <!-- Halo-Kontur Schalter & Live-Vorschau -->
-        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #283548; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-          <label class="check-label" style="margin-bottom: 0; cursor: pointer; flex: 1; min-width: 260px;">
+        <!-- Slider row -->
+        <div style="margin: 10px 0 14px 0;">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted, #94a3b8); margin-bottom: 4px;">
+            <span>Transparenter / Höchster Kontrast (15%)</span>
+            <span>Vollflächig (100%)</span>
+          </div>
+          <input type="range" id="def-opacity" min="0.15" max="1.0" step="0.05" value="0.35" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <!-- Halo-Kontur Schalter -->
+        <div style="padding-top: 10px; border-top: 1px solid var(--col-border, #283548); margin-bottom: 14px;">
+          <label class="check-label" style="margin-bottom: 0; cursor: pointer;">
             <input type="checkbox" id="def-favicon-halo" checked>
             <div>
-              <strong style="color: #f8fafc; display: flex; align-items: center; gap: 6px;">
+              <strong style="color: var(--text, #f8fafc); display: flex; align-items: center; gap: 6px;">
                 <span>✨ Automatischer Favicon-Kontrast-Schutz (Halo-Kontur)</span>
                 <span id="badge-halo-status" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 600;">Aktiv</span>
               </strong>
-              <span style="color: #94a3b8; font-size: 11px; line-height: 1.4; display: block; margin-top: 2px;">
+              <span style="color: var(--muted, #94a3b8); font-size: 11px; line-height: 1.4; display: block; margin-top: 2px;">
                 Legt einen subtilen Licht-/Schatten-Schutzrand um Website-Favicons, damit Konturen auch bei identischer Farbe wie der Tab messerscharf bleiben.
               </span>
             </div>
           </label>
-          <div style="background: #0b1120; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 8px;">
-            <span style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700;">Halo-Vorschau:</span>
-            <div id="halo-preview-pill" style="display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 4px; background: rgba(255, 79, 94, 0.35); border-top: 2px solid #ff4f5e;">
-              <span id="demo-halo-icon" style="font-size: 14px; filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));">🔴</span>
-              <span style="font-size: 11px; color: #fff; font-weight: 600;">Rot auf Rot</span>
+        </div>
+
+        <!-- Live-Vorschau der Deckkraft (Echtzeit-Vergleich) -->
+        <div style="background: var(--input-bg, #0b1120); border: 1px solid var(--card-border, #1e293b); border-radius: 8px; padding: 12px 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--col-border, rgba(255,255,255,0.08)); padding-bottom: 8px;">
+            <span style="font-size: 12px; font-weight: 700; color: var(--text, #f8fafc); display: flex; align-items: center; gap: 6px;">
+              <span>👁️ Live-Vorschau der Deckkraft (Echtzeit-Vergleich)</span>
+            </span>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 5px; font-size: 11px;">
+                <span style="color: var(--muted, #94a3b8);">Farbe:</span>
+                <div style="display: flex; align-items: center; gap: 4px;" id="opacity-test-color-group">
+                  <button type="button" class="test-color-btn" data-color="#ff4f5e" title="Rot" style="width: 18px; height: 18px; border-radius: 50%; background: #ff4f5e; border: 2px solid #fff; cursor: pointer; transition: transform 0.1s; transform: scale(1.15);"></button>
+                  <button type="button" class="test-color-btn" data-color="#37adff" title="Blau" style="width: 18px; height: 18px; border-radius: 50%; background: #37adff; border: 1px solid rgba(0,0,0,0.4); opacity: 0.65; cursor: pointer; transition: transform 0.1s;"></button>
+                  <button type="button" class="test-color-btn" data-color="#51cf66" title="Grün" style="width: 18px; height: 18px; border-radius: 50%; background: #51cf66; border: 1px solid rgba(0,0,0,0.4); opacity: 0.65; cursor: pointer; transition: transform 0.1s;"></button>
+                  <button type="button" class="test-color-btn" data-color="#ff9400" title="Orange" style="width: 18px; height: 18px; border-radius: 50%; background: #ff9400; border: 1px solid rgba(0,0,0,0.4); opacity: 0.65; cursor: pointer; transition: transform 0.1s;"></button>
+                  <button type="button" class="test-color-btn" data-color="#a855f7" title="Lila" style="width: 18px; height: 18px; border-radius: 50%; background: #a855f7; border: 1px solid rgba(0,0,0,0.4); opacity: 0.65; cursor: pointer; transition: transform 0.1s;"></button>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px; font-size: 11px;" id="opacity-test-icon-group">
+                <span style="color: var(--muted, #94a3b8);">Icon:</span>
+                <button type="button" class="test-icon-btn" data-icon="🔴" style="font-size: 12px; padding: 1px 4px; border-radius: 4px; border: 1px solid #0284c7; background: rgba(2, 132, 199, 0.25); cursor: pointer;">🔴</button>
+                <button type="button" class="test-icon-btn" data-icon="🌐" style="font-size: 12px; padding: 1px 4px; border-radius: 4px; border: 1px solid transparent; background: transparent; cursor: pointer;">🌐</button>
+                <button type="button" class="test-icon-btn" data-icon="⚡" style="font-size: 12px; padding: 1px 4px; border-radius: 4px; border: 1px solid transparent; background: transparent; cursor: pointer;">⚡</button>
+                <button type="button" class="test-icon-btn" data-icon="🦊" style="font-size: 12px; padding: 1px 4px; border-radius: 4px; border: 1px solid transparent; background: transparent; cursor: pointer;">🦊</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: flex-start; gap: 14px; flex-wrap: wrap;">
+            <!-- Bad Example: 100% Solid (Verschwimmt) -->
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+              <div id="preview-tab-solid" style="width: 130px; height: 38px; border-radius: 6px 6px 0 0; border-top: 2px solid #ff4f5e; background: #ff4f5e; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.4); transition: background 0.15s ease, border-color 0.15s ease;">
+                <span id="preview-tab-solid-icon" style="font-size: 14px;">🔴</span>
+                <span style="font-size: 11px; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">YouTube</span>
+              </div>
+              <span style="font-size: 10px; color: #f43f5e; font-weight: 700;">100% (Verschwimmt)</span>
+            </div>
+
+            <div style="font-size: 18px; font-weight: 700; color: var(--muted, #64748b);">➔</div>
+
+            <!-- Good Example: Selected Opacity with Halo (Klar erkennbar) -->
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+              <div id="preview-tab-opacity" style="width: 140px; height: 38px; border-radius: 6px 6px 0 0; border-top: 2px solid #ff4f5e; background: rgba(255, 79, 94, 0.35); display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.4); transition: background 0.15s ease, border-color 0.15s ease;">
+                <span id="preview-tab-opacity-icon" style="font-size: 14px; filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));">🔴</span>
+                <span style="font-size: 11px; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">YouTube</span>
+              </div>
+              <span id="preview-tab-badge" style="font-size: 10px; color: #10b981; font-weight: 700;">35% (Klar erkennbar!)</span>
+            </div>
+
+            <div style="flex: 1; min-width: 200px; font-size: 11px; color: var(--muted, #94a3b8); border-left: 2px solid var(--col-border, #334155); padding-left: 12px; line-height: 1.45;">
+              Das Logo und der Tab haben dieselbe Farbe (<code id="preview-test-color-code" style="color: #f8fafc; font-weight: 600;">#ff4f5e</code>). Dank reduzierter Deckkraft schimmert der Hintergrund sanft durch und das Symbol hebt sich zusammen mit der Halo-Kontur gestochen scharf ab!
             </div>
           </div>
         </div>
@@ -2536,20 +2642,130 @@ async function saveConfigToStorage() {
 // -------------------------------------------------------------
 // Defaults Card (Standard-Einstellungen & Farbschema)
 // -------------------------------------------------------------
-function updateHaloPreview(isHalo) {
-  const icon = document.getElementById('demo-halo-icon');
-  const badge = document.getElementById('badge-halo-status');
-  if (icon) {
-    icon.style.filter = isHalo
+let currentOpacityTestColor = '#ff4f5e';
+let currentOpacityTestIcon = '🔴';
+
+function hexToRgba(hex, alpha) {
+  if (!hex) return 'rgba(55, 173, 255, ' + (alpha !== undefined ? alpha : 0.35) + ')';
+  var clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean.split('').map(function(c) { return c + c; }).join('');
+  }
+  if (clean.length >= 6) {
+    var r = parseInt(clean.substring(0, 2), 16) || 0;
+    var g = parseInt(clean.substring(2, 4), 16) || 0;
+    var b = parseInt(clean.substring(4, 6), 16) || 0;
+    var a = (alpha !== undefined && alpha !== null) ? Math.max(0, Math.min(1, Number(alpha))) : 0.35;
+    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + a + ')';
+  }
+  return hex;
+}
+
+function updateOpacityPreview() {
+  const opacityVal = (typeof appConfig.activeTabOpacity === 'number') ? appConfig.activeTabOpacity : 0.35;
+  const isHalo = appConfig.enableFaviconContrastHalo !== false;
+  const pct = Math.round(opacityVal * 100);
+
+  // 1. Text badge next to header
+  const lblOpacityVal = document.getElementById('lbl-opacity-val');
+  if (lblOpacityVal) lblOpacityVal.textContent = pct + '% Deckkraft';
+
+  // 2. Slider value sync
+  const defOpacity = document.getElementById('def-opacity');
+  if (defOpacity && Math.abs(parseFloat(defOpacity.value) - opacityVal) > 0.01) {
+    defOpacity.value = String(opacityVal);
+  }
+
+  // 3. Preset button active highlights
+  document.querySelectorAll('.op-preset-btn').forEach((btn) => {
+    const val = parseFloat(btn.getAttribute('data-val'));
+    if (Math.abs(val - opacityVal) < 0.03) {
+      btn.style.borderColor = '#0284c7';
+      btn.style.background = 'rgba(2, 132, 199, 0.25)';
+      btn.style.color = '#38bdf8';
+      btn.style.fontWeight = '700';
+    } else {
+      btn.style.borderColor = '';
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.fontWeight = '';
+    }
+  });
+
+  // 4. Halo badge status
+  const haloBadge = document.getElementById('badge-halo-status');
+  if (haloBadge) {
+    haloBadge.textContent = isHalo ? 'Aktiv' : 'Deaktiviert';
+    haloBadge.style.color = isHalo ? '#38bdf8' : '#94a3b8';
+    haloBadge.style.borderColor = isHalo ? 'rgba(56, 189, 248, 0.4)' : '#334155';
+    haloBadge.style.background = isHalo ? 'rgba(56, 189, 248, 0.2)' : 'rgba(100, 116, 139, 0.2)';
+  }
+
+  // 5. Solid bad example tab (100% opacity)
+  const tabSolid = document.getElementById('preview-tab-solid');
+  const iconSolid = document.getElementById('preview-tab-solid-icon');
+  if (tabSolid) {
+    tabSolid.style.backgroundColor = currentOpacityTestColor;
+    tabSolid.style.borderTopColor = currentOpacityTestColor;
+  }
+  if (iconSolid) {
+    iconSolid.textContent = currentOpacityTestIcon;
+    iconSolid.style.filter = 'none';
+  }
+
+  // 6. Good live example tab (with dynamic opacity & halo)
+  const tabOpacity = document.getElementById('preview-tab-opacity');
+  const iconOpacity = document.getElementById('preview-tab-opacity-icon');
+  if (tabOpacity) {
+    tabOpacity.style.backgroundColor = hexToRgba(currentOpacityTestColor, opacityVal);
+    tabOpacity.style.borderTopColor = currentOpacityTestColor;
+  }
+  if (iconOpacity) {
+    iconOpacity.textContent = currentOpacityTestIcon;
+    iconOpacity.style.filter = isHalo
       ? 'drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85))'
       : 'none';
   }
+
+  // 7. Preview status text
+  const badge = document.getElementById('preview-tab-badge');
   if (badge) {
-    badge.textContent = isHalo ? 'Aktiv' : 'Deaktiviert';
-    badge.style.color = isHalo ? '#38bdf8' : '#94a3b8';
-    badge.style.borderColor = isHalo ? 'rgba(56, 189, 248, 0.4)' : '#334155';
-    badge.style.background = isHalo ? 'rgba(56, 189, 248, 0.2)' : 'rgba(100, 116, 139, 0.2)';
+    if (pct <= 50) {
+      badge.textContent = pct + '% (Klar erkennbar!)';
+      badge.style.color = '#10b981';
+    } else if (pct <= 75) {
+      badge.textContent = pct + '% (Ausgewogen)';
+      badge.style.color = '#38bdf8';
+    } else if (pct < 100) {
+      badge.textContent = pct + '% (Kräftig / Reduzierter Kontrast)';
+      badge.style.color = '#f59e0b';
+    } else {
+      badge.textContent = '100% (Verschwimmt bei gleicher Farbe)';
+      badge.style.color = '#f43f5e';
+    }
   }
+
+  // 8. Color code label in description
+  const codeElem = document.getElementById('preview-test-color-code');
+  if (codeElem) codeElem.textContent = currentOpacityTestColor;
+
+  // 9. Legacy pill if element exists
+  const haloPill = document.getElementById('halo-preview-pill');
+  if (haloPill) {
+    haloPill.style.backgroundColor = hexToRgba(currentOpacityTestColor, opacityVal);
+    haloPill.style.borderTopColor = currentOpacityTestColor;
+  }
+  const demoHaloIcon = document.getElementById('demo-halo-icon');
+  if (demoHaloIcon) {
+    demoHaloIcon.textContent = currentOpacityTestIcon;
+    demoHaloIcon.style.filter = isHalo
+      ? 'drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85))'
+      : 'none';
+  }
+}
+
+function updateHaloPreview(isHalo) {
+  updateOpacityPreview();
 }
 
 function renderDefaultsCard() {
@@ -2639,9 +2855,267 @@ function renderDefaultsCard() {
   if (defTextPicker) defTextPicker.value = textColor;
   if (defTextInput) defTextInput.value = textColor.toUpperCase();
 
-  // Apply base theme mode directly to options page layout!
-  document.body.className = 'theme-' + currentThemeMode;
+  // Apply base theme mode & custom variables directly to options page layout!
+  applyOptionsPageTheme();
+  updateThemePresetDropdown();
 }
+
+// -------------------------------------------------------------
+// Theme Presets & Custom Theme Styling Engine
+// -------------------------------------------------------------
+const THEME_PRESETS_LIST = [
+  {
+    id: 'catppuccin-mocha',
+    name: '🌸 Catppuccin Mocha',
+    description: 'Moderne Pastelltöne auf samtigem Schiefer',
+    frame: '#181825',
+    toolbar: '#1e1e2e',
+    text: '#cdd6f4',
+    defaultColor: '#cba6f7',
+    opacity: 0.35,
+  },
+  {
+    id: 'nord-aurora',
+    name: '❄️ Nord Aurora',
+    description: 'Arktisches Dunkelblau mit Polar-Frost Cyan-Akzenten',
+    frame: '#242933',
+    toolbar: '#2e3440',
+    text: '#eceff4',
+    defaultColor: '#88c0d0',
+    opacity: 0.35,
+  },
+  {
+    id: 'dracula-pro',
+    name: '🧛 Dracula Dark',
+    description: 'Beliebtes Entwickler-Theme mit markantem Pink & Violett',
+    frame: '#21222c',
+    toolbar: '#282a36',
+    text: '#f8f8f2',
+    defaultColor: '#ff79c6',
+    opacity: 0.35,
+  },
+  {
+    id: 'tokyo-night',
+    name: '🌃 Tokyo Night',
+    description: 'Tiefes Nachtblau mit leuchtenden Neon-Akzenten',
+    frame: '#16161e',
+    toolbar: '#1a1b26',
+    text: '#c0caf5',
+    defaultColor: '#7aa2f7',
+    opacity: 0.35,
+  },
+  {
+    id: 'oled-midnight',
+    name: '⬛ OLED Pure Black',
+    description: 'Tiefschwarz für stromsparendes OLED ohne Graustufen',
+    frame: '#000000',
+    toolbar: '#0c0d12',
+    text: '#ffffff',
+    defaultColor: '#38bdf8',
+    opacity: 0.40,
+  },
+  {
+    id: 'firefox-proton-dark',
+    name: '🦊 Firefox Dark Pure',
+    description: 'Klassisches Mozilla Dark Theme (#1c1b22, #2b2a33)',
+    frame: '#1c1b22',
+    toolbar: '#2b2a33',
+    text: '#fbfbfe',
+    defaultColor: '#37adff',
+    opacity: 0.35,
+  },
+  {
+    id: 'clean-light',
+    name: '☀️ Firefox Light Pure',
+    description: 'Helles Tageslicht-Design mit hohem Lesekontrast',
+    frame: '#ffffff',
+    toolbar: '#f0f0f4',
+    text: '#15141a',
+    defaultColor: '#0060df',
+    opacity: 0.30,
+  },
+];
+
+function isColorDark(hex) {
+  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return true;
+  const c = hex.replace('#', '');
+  if (c.length < 6) return true;
+  const r = parseInt(c.substr(0, 2), 16) || 0;
+  const g = parseInt(c.substr(2, 2), 16) || 0;
+  const b = parseInt(c.substr(4, 2), 16) || 0;
+  return (r * 0.299 + g * 0.587 + b * 0.114) < 140;
+}
+
+function applyOptionsPageTheme() {
+  const currentThemeMode = appConfig.baseThemeMode || 'system';
+  document.body.classList.remove('theme-dark', 'theme-light', 'theme-system', 'theme-custom');
+  document.body.classList.add('theme-' + currentThemeMode);
+
+  const root = document.documentElement;
+  if (currentThemeMode === 'custom') {
+    const fColor = appConfig.customBaseFrameColor || '#1c1b22';
+    const tbColor = appConfig.customBaseToolbarColor || '#2b2a33';
+    const txtColor = appConfig.customBaseTextColor || '#fbfbfe';
+    const darkTb = isColorDark(tbColor);
+
+    root.style.setProperty('--bg', fColor);
+    root.style.setProperty('--card-bg', tbColor);
+    root.style.setProperty('--text', txtColor);
+
+    if (darkTb) {
+      root.style.setProperty('--card-border', 'rgba(255, 255, 255, 0.12)');
+      root.style.setProperty('--col-bg', 'rgba(0, 0, 0, 0.24)');
+      root.style.setProperty('--col-border', 'rgba(255, 255, 255, 0.08)');
+      root.style.setProperty('--input-bg', 'rgba(0, 0, 0, 0.32)');
+      root.style.setProperty('--input-border', 'rgba(255, 255, 255, 0.16)');
+      root.style.setProperty('--btn-sec-bg', 'rgba(255, 255, 255, 0.08)');
+      root.style.setProperty('--btn-sec-text', txtColor);
+      root.style.setProperty('--btn-sec-border', 'rgba(255, 255, 255, 0.18)');
+      root.style.setProperty('--muted', 'rgba(255, 255, 255, 0.65)');
+    } else {
+      root.style.setProperty('--card-border', 'rgba(0, 0, 0, 0.12)');
+      root.style.setProperty('--col-bg', 'rgba(0, 0, 0, 0.04)');
+      root.style.setProperty('--col-border', 'rgba(0, 0, 0, 0.10)');
+      root.style.setProperty('--input-bg', '#ffffff');
+      root.style.setProperty('--input-border', 'rgba(0, 0, 0, 0.18)');
+      root.style.setProperty('--btn-sec-bg', 'rgba(0, 0, 0, 0.05)');
+      root.style.setProperty('--btn-sec-text', txtColor);
+      root.style.setProperty('--btn-sec-border', 'rgba(0, 0, 0, 0.18)');
+      root.style.setProperty('--muted', 'rgba(0, 0, 0, 0.60)');
+    }
+  } else {
+    const vars = ['--bg', '--card-bg', '--text', '--card-border', '--col-bg', '--col-border', '--input-bg', '--input-border', '--btn-sec-bg', '--btn-sec-text', '--btn-sec-border', '--muted'];
+    vars.forEach((v) => root.style.removeProperty(v));
+  }
+}
+
+function updateThemePresetDropdown() {
+  const sel = document.getElementById('def-theme-preset');
+  const optSaved = document.getElementById('optgroup-saved-themes');
+  const badge = document.getElementById('lbl-preset-badge');
+  if (!sel) return;
+
+  if (optSaved) {
+    optSaved.innerHTML = '';
+    const saved = appConfig.savedThemes || [];
+    saved.forEach((st) => {
+      const opt = document.createElement('option');
+      opt.value = st.id;
+      opt.textContent = '⭐ ' + st.name;
+      optSaved.appendChild(opt);
+    });
+    optSaved.style.display = saved.length > 0 ? '' : 'none';
+  }
+
+  const curFrame = (appConfig.customBaseFrameColor || '').toLowerCase();
+  const curToolbar = (appConfig.customBaseToolbarColor || '').toLowerCase();
+  const curText = (appConfig.customBaseTextColor || '').toLowerCase();
+
+  let matched = THEME_PRESETS_LIST.find((p) =>
+    p.frame.toLowerCase() === curFrame &&
+    p.toolbar.toLowerCase() === curToolbar &&
+    p.text.toLowerCase() === curText
+  );
+  if (!matched && appConfig.savedThemes) {
+    matched = appConfig.savedThemes.find((p) =>
+      p.frame.toLowerCase() === curFrame &&
+      p.toolbar.toLowerCase() === curToolbar &&
+      p.text.toLowerCase() === curText
+    );
+  }
+
+  if (matched) {
+    sel.value = matched.id;
+    if (badge) badge.textContent = matched.name;
+  } else {
+    sel.value = '';
+    if (badge) badge.textContent = (appConfig.baseThemeMode === 'custom') ? 'Eigene Farben' : '';
+  }
+}
+
+async function applyThemePreset(presetId) {
+  if (!presetId) return;
+  let found = THEME_PRESETS_LIST.find((p) => p.id === presetId);
+  if (!found && appConfig.savedThemes) {
+    found = appConfig.savedThemes.find((p) => p.id === presetId);
+  }
+  if (!found) return;
+
+  appConfig.baseThemeMode = 'custom';
+  appConfig.customBaseFrameColor = found.frame;
+  appConfig.customBaseToolbarColor = found.toolbar;
+  appConfig.customBaseTextColor = found.text;
+  if (found.defaultColor) appConfig.defaultColor = found.defaultColor;
+  if (typeof found.opacity === 'number') appConfig.activeTabOpacity = found.opacity;
+  if (found.hybridWindowBehavior) appConfig.hybridWindowBehavior = found.hybridWindowBehavior;
+  if (found.hybridTabIndicatorStyle) appConfig.hybridTabIndicatorStyle = found.hybridTabIndicatorStyle;
+
+  const defBaseTheme = document.getElementById('def-base-theme');
+  if (defBaseTheme) defBaseTheme.value = 'custom';
+  const customThemeFields = document.getElementById('custom-theme-fields');
+  if (customThemeFields) customThemeFields.style.display = 'flex';
+
+  const defFramePicker = document.getElementById('def-frame-picker');
+  const defFrameInput = document.getElementById('def-frame-input');
+  const defToolbarPicker = document.getElementById('def-toolbar-picker');
+  const defToolbarInput = document.getElementById('def-toolbar-input');
+  const defTextPicker = document.getElementById('def-text-picker');
+  const defTextInput = document.getElementById('def-text-input');
+
+  if (defFramePicker) defFramePicker.value = found.frame;
+  if (defFrameInput) defFrameInput.value = found.frame.toUpperCase();
+  if (defToolbarPicker) defToolbarPicker.value = found.toolbar;
+  if (defToolbarInput) defToolbarInput.value = found.toolbar.toUpperCase();
+  if (defTextPicker) defTextPicker.value = found.text;
+  if (defTextInput) defTextInput.value = found.text.toUpperCase();
+
+  applyOptionsPageTheme();
+  updateThemePresetDropdown();
+  await saveConfigToStorage();
+}
+
+// Preset dropdown listener
+document.getElementById('def-theme-preset')?.addEventListener('change', (e) => {
+  if (e.target.value) {
+    applyThemePreset(e.target.value);
+  }
+});
+
+// Quick-theme preset buttons
+document.querySelectorAll('.btn-quick-theme').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const themeId = btn.getAttribute('data-theme');
+    if (themeId) {
+      applyThemePreset(themeId);
+    }
+  });
+});
+
+// Save as new custom preset
+document.getElementById('btn-save-as-preset')?.addEventListener('click', async () => {
+  const name = prompt('Geben Sie einen Namen für diese Theme-Vorlage ein:');
+  if (!name || !name.trim()) return;
+
+  if (!appConfig.savedThemes) appConfig.savedThemes = [];
+  const newPreset = {
+    id: 'user-theme-' + Date.now(),
+    name: name.trim(),
+    frame: appConfig.customBaseFrameColor || '#1c1b22',
+    toolbar: appConfig.customBaseToolbarColor || '#2b2a33',
+    text: appConfig.customBaseTextColor || '#fbfbfe',
+    defaultColor: appConfig.defaultColor || '#37adff',
+    opacity: appConfig.activeTabOpacity ?? 0.35,
+    isCustom: true,
+  };
+  appConfig.savedThemes.push(newPreset);
+  await saveConfigToStorage();
+  updateThemePresetDropdown();
+  const sel = document.getElementById('def-theme-preset');
+  if (sel) sel.value = newPreset.id;
+  const badge = document.getElementById('lbl-preset-badge');
+  if (badge) badge.textContent = newPreset.name;
+  alert('Theme-Vorlage "' + newPreset.name + '" erfolgreich gespeichert!');
+});
 
 // Defaults listeners
 document.getElementById('def-base-theme')?.addEventListener('change', (e) => {
@@ -2650,7 +3124,9 @@ document.getElementById('def-base-theme')?.addEventListener('change', (e) => {
   if (customThemeFields) {
     customThemeFields.style.display = (e.target.value === 'custom') ? 'flex' : 'none';
   }
-  document.body.className = 'theme-' + e.target.value;
+  applyOptionsPageTheme();
+  updateThemePresetDropdown();
+  saveConfigToStorage();
 });
 
 // Frame color sync
@@ -2658,6 +3134,9 @@ document.getElementById('def-frame-picker')?.addEventListener('input', (e) => {
   appConfig.customBaseFrameColor = e.target.value;
   const inp = document.getElementById('def-frame-input');
   if (inp) inp.value = e.target.value.toUpperCase();
+  applyOptionsPageTheme();
+  updateThemePresetDropdown();
+  saveConfigToStorage();
 });
 document.getElementById('def-frame-input')?.addEventListener('input', (e) => {
   let val = e.target.value.trim();
@@ -2666,6 +3145,9 @@ document.getElementById('def-frame-input')?.addEventListener('input', (e) => {
     appConfig.customBaseFrameColor = val;
     const picker = document.getElementById('def-frame-picker');
     if (picker) picker.value = val;
+    applyOptionsPageTheme();
+    updateThemePresetDropdown();
+    saveConfigToStorage();
   }
 });
 
@@ -2674,6 +3156,9 @@ document.getElementById('def-toolbar-picker')?.addEventListener('input', (e) => 
   appConfig.customBaseToolbarColor = e.target.value;
   const inp = document.getElementById('def-toolbar-input');
   if (inp) inp.value = e.target.value.toUpperCase();
+  applyOptionsPageTheme();
+  updateThemePresetDropdown();
+  saveConfigToStorage();
 });
 document.getElementById('def-toolbar-input')?.addEventListener('input', (e) => {
   let val = e.target.value.trim();
@@ -2682,6 +3167,9 @@ document.getElementById('def-toolbar-input')?.addEventListener('input', (e) => {
     appConfig.customBaseToolbarColor = val;
     const picker = document.getElementById('def-toolbar-picker');
     if (picker) picker.value = val;
+    applyOptionsPageTheme();
+    updateThemePresetDropdown();
+    saveConfigToStorage();
   }
 });
 
@@ -2690,6 +3178,9 @@ document.getElementById('def-text-picker')?.addEventListener('input', (e) => {
   appConfig.customBaseTextColor = e.target.value;
   const inp = document.getElementById('def-text-input');
   if (inp) inp.value = e.target.value.toUpperCase();
+  applyOptionsPageTheme();
+  updateThemePresetDropdown();
+  saveConfigToStorage();
 });
 document.getElementById('def-text-input')?.addEventListener('input', (e) => {
   let val = e.target.value.trim();
@@ -2698,6 +3189,9 @@ document.getElementById('def-text-input')?.addEventListener('input', (e) => {
     appConfig.customBaseTextColor = val;
     const picker = document.getElementById('def-text-picker');
     if (picker) picker.value = val;
+    applyOptionsPageTheme();
+    updateThemePresetDropdown();
+    saveConfigToStorage();
   }
 });
 
@@ -2762,6 +3256,8 @@ document.getElementById('theme-file-addon-input')?.addEventListener('change', (e
       appConfig.baseThemeMode = 'custom';
       await saveConfigToStorage();
       renderDefaultsCard();
+      applyOptionsPageTheme();
+      updateThemePresetDropdown();
       alert('Theme erfolgreich importiert und angewendet!');
     } catch (err) {
       alert('Fehler beim Importieren der Theme-Datei: ' + err.message);
@@ -2783,23 +3279,55 @@ document.querySelectorAll('#def-color-grid .swatch-btn').forEach((btn) => {
 document.getElementById('def-opacity')?.addEventListener('input', (e) => {
   const val = parseFloat(e.target.value);
   appConfig.activeTabOpacity = val;
-  const lbl = document.getElementById('lbl-opacity-val');
-  if (lbl) lbl.textContent = Math.round(val * 100) + '%';
+  updateOpacityPreview();
 });
 
 document.getElementById('def-favicon-halo')?.addEventListener('change', (e) => {
   appConfig.enableFaviconContrastHalo = e.target.checked;
-  updateHaloPreview(e.target.checked);
+  updateOpacityPreview();
 });
 
 document.querySelectorAll('.op-preset-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     const val = parseFloat(btn.getAttribute('data-val'));
     appConfig.activeTabOpacity = val;
-    const defOpacity = document.getElementById('def-opacity');
-    const lbl = document.getElementById('lbl-opacity-val');
-    if (defOpacity) defOpacity.value = String(val);
-    if (lbl) lbl.textContent = Math.round(val * 100) + '%';
+    updateOpacityPreview();
+  });
+});
+
+// Opacity Preview Test Color listeners
+document.querySelectorAll('#opacity-test-color-group .test-color-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    currentOpacityTestColor = btn.getAttribute('data-color') || '#ff4f5e';
+    document.querySelectorAll('#opacity-test-color-group .test-color-btn').forEach((b) => {
+      if (b === btn) {
+        b.style.border = '2px solid #fff';
+        b.style.opacity = '1';
+        b.style.transform = 'scale(1.15)';
+      } else {
+        b.style.border = '1px solid rgba(0,0,0,0.4)';
+        b.style.opacity = '0.65';
+        b.style.transform = 'scale(1)';
+      }
+    });
+    updateOpacityPreview();
+  });
+});
+
+// Opacity Preview Test Icon listeners
+document.querySelectorAll('#opacity-test-icon-group .test-icon-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    currentOpacityTestIcon = btn.getAttribute('data-icon') || '🔴';
+    document.querySelectorAll('#opacity-test-icon-group .test-icon-btn').forEach((b) => {
+      if (b === btn) {
+        b.style.borderColor = '#0284c7';
+        b.style.background = 'rgba(2, 132, 199, 0.25)';
+      } else {
+        b.style.borderColor = 'transparent';
+        b.style.background = 'transparent';
+      }
+    });
+    updateOpacityPreview();
   });
 });
 
@@ -2850,7 +3378,11 @@ document.getElementById('btn-save-defaults')?.addEventListener('click', async ()
   if (defFramePicker) appConfig.customBaseFrameColor = defFramePicker.value;
   const defToolbarPicker = document.getElementById('def-toolbar-picker');
   if (defToolbarPicker) appConfig.customBaseToolbarColor = defToolbarPicker.value;
+  const defTextPicker = document.getElementById('def-text-picker');
+  if (defTextPicker) appConfig.customBaseTextColor = defTextPicker.value;
 
+  applyOptionsPageTheme();
+  updateThemePresetDropdown();
   await saveConfigToStorage();
 
   const feedback = document.getElementById('defaults-feedback');

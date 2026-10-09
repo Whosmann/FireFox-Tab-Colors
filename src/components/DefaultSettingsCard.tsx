@@ -21,7 +21,7 @@ import {
 import { ExtensionConfig, FirefoxContainerColor, ColorMode, BaseThemeMode, HybridWindowBehavior, HybridTabIndicatorStyle } from '../types/extension';
 import { FIREFOX_CONTAINER_COLORS, hexToRgba } from '../utils/urlMatcher';
 import { ChromaTestLogo, LogoVariant } from './ChromaTestLogo';
-import { ThemeImportExportModal } from './ThemeImportExportModal';
+import { ThemeImportExportModal, POPULAR_THEME_PRESETS } from './ThemeImportExportModal';
 
 interface DefaultSettingsCardProps {
   config: ExtensionConfig;
@@ -575,54 +575,38 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
               {/* Schnellauswahl-Voreinstellungen */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Presets:</span>
-                <button
-                  type="button"
-                  onClick={() => onChangeConfig({
-                    customBaseFrameColor: '#1c1b22',
-                    customBaseToolbarColor: '#2b2a33',
-                    customBaseTextColor: '#fbfbfe',
-                  })}
-                  className="px-2 py-1 text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors"
-                  title="Klassisches Firefox Dark Theme"
-                >
-                  Firefox Dark
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeConfig({
-                    customBaseFrameColor: '#090a0f',
-                    customBaseToolbarColor: '#13151f',
-                    customBaseTextColor: '#ffffff',
-                  })}
-                  className="px-2 py-1 text-[11px] font-medium bg-slate-900 hover:bg-black text-white rounded-md transition-colors"
-                  title="OLED Tiefschwarz"
-                >
-                  OLED Schwarz
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeConfig({
-                    customBaseFrameColor: '#0f172a',
-                    customBaseToolbarColor: '#1e293b',
-                    customBaseTextColor: '#f8fafc',
-                  })}
-                  className="px-2 py-1 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-sky-200 rounded-md transition-colors"
-                  title="Nordisches Schiefergrau"
-                >
-                  Nordic Slate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeConfig({
-                    customBaseFrameColor: '#ffffff',
-                    customBaseToolbarColor: '#f0f0f4',
-                    customBaseTextColor: '#15141a',
-                  })}
-                  className="px-2 py-1 text-[11px] font-medium bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-md transition-colors"
-                  title="Helles Farbschema"
-                >
-                  Hell
-                </button>
+                {POPULAR_THEME_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => onChangeConfig({
+                      customBaseFrameColor: preset.frame,
+                      customBaseToolbarColor: preset.toolbar,
+                      customBaseTextColor: preset.text,
+                      defaultColor: preset.defaultColor || config.defaultColor,
+                    })}
+                    className="px-2 py-1 text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors"
+                    title={`${preset.name}: ${preset.description}`}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+                {(config.savedThemes || []).map((saved) => (
+                  <button
+                    key={saved.id}
+                    type="button"
+                    onClick={() => onChangeConfig({
+                      customBaseFrameColor: saved.frame,
+                      customBaseToolbarColor: saved.toolbar,
+                      customBaseTextColor: saved.text,
+                      defaultColor: saved.defaultColor || config.defaultColor,
+                    })}
+                    className="px-2 py-1 text-[11px] font-medium bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-md transition-colors"
+                    title={`Eigenes Theme: ${saved.name}`}
+                  >
+                    ⭐ {saved.name}
+                  </button>
+                ))}
                 <button
                   type="button"
                   onClick={() => onChangeConfig({
