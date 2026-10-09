@@ -6,6 +6,7 @@
 import JSZip from 'jszip';
 import { ExtensionConfig, GeneratedFile, TabColorRule } from '../types/extension';
 import { FIREFOX_CONTAINER_COLORS } from './urlMatcher';
+import { PRESET_PACKS } from './presetRules';
 
 /**
  * Creates SVG icon file content for the extension
@@ -26,6 +27,7 @@ function createExtensionSvgIcon(primaryColor = '#ff4f5e'): string {
  */
 export function generateExtensionFiles(config: ExtensionConfig): GeneratedFile[] {
   const files: GeneratedFile[] = [];
+  const presetPacksJson = JSON.stringify(PRESET_PACKS);
 
   // 1. manifest.json
   const manifest = {
@@ -1632,8 +1634,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     .btn-cell { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
     .edit-btn { background: #0284c7; color: white; padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
     .del-btn { background: #ef4444; color: white; padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
-    .priority-btn { background: var(--btn-sec-bg); color: var(--muted); border: 1px solid var(--btn-sec-border); border-radius: 4px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-    .priority-btn:hover { color: var(--text); background: var(--input-bg); }
+    .priority-btn { background: var(--btn-sec-bg); color: var(--muted); border: 1px solid var(--btn-sec-border); border-radius: 4px; width: 22px; height: 22px; font-size: 10px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
+    .priority-btn:hover:not(:disabled) { color: var(--text); background: var(--input-bg); border-color: #38bdf8; }
+    .priority-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+    .priority-input { width: 38px; height: 22px; text-align: center; font-family: monospace; font-size: 11px; font-weight: 600; padding: 1px 2px; background: var(--input-bg); border: 1px solid var(--col-border); border-radius: 4px; color: var(--text); }
+    .priority-input:focus { border-color: #38bdf8; outline: none; }
+    .drag-handle { cursor: grab; color: var(--muted); padding: 0 4px; font-size: 13px; line-height: 1; user-select: none; }
+    .drag-handle:hover { color: var(--text); }
+    .drag-handle:active { cursor: grabbing; }
+    tr.drag-over-row { border-top: 2px solid #38bdf8 !important; background: rgba(56, 189, 248, 0.12) !important; }
+    tr.dragging-row { opacity: 0.35; }
+    .quick-preset-card { background: rgba(88, 28, 135, 0.22); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 8px; padding: 7px 11px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 6px; transition: all 0.15s; }
+    .quick-preset-card:hover { background: rgba(147, 51, 234, 0.28); border-color: #c084fc; transform: translateY(-1px); }
+    .preset-pack-item { background: #131c2e; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: all 0.15s; text-align: left; }
+    .preset-pack-item:hover { border-color: #a855f7; }
+    .preset-pack-item.active { border-color: #a855f7; background: rgba(168, 85, 247, 0.15); box-shadow: 0 0 0 1px #a855f7; }
     tr.selected-row { background: rgba(56, 189, 248, 0.12) !important; }
     .bulk-btn-group { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--col-border); }
     .bulk-sub-btn { background: var(--btn-sec-bg); color: var(--btn-sec-text); border: none; padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
@@ -2040,6 +2055,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
     </div>
 
+    <!-- Workflow Preset-Packs Quick Bar -->
+    <div class="card" id="card-preset-packs" style="margin-bottom: 16px; padding: 14px 16px; background: linear-gradient(135deg, rgba(88, 28, 135, 0.25) 0%, rgba(30, 27, 75, 0.35) 100%); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 26px; height: 26px; border-radius: 6px; background: rgba(168, 85, 247, 0.25); color: #c084fc; display: flex; align-items: center; justify-content: center; font-size: 14px;">✨</div>
+          <span style="font-weight: 700; font-size: 13px; color: #f8fafc;">Workflow Preset-Packs</span>
+          <span style="font-size: 10px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; padding: 2px 8px; border-radius: 12px; font-weight: 600; border: 1px solid rgba(168, 85, 247, 0.3);">Vorkonfigurierte Regel-Sets</span>
+        </div>
+        <button type="button" id="btn-open-preset-packs-modal" class="btn btn-secondary" style="font-size: 11px; padding: 5px 12px; color: #e9d5ff; border-color: rgba(168, 85, 247, 0.4); background: rgba(88, 28, 135, 0.35); cursor: pointer;">
+          ✨ Alle Packs &amp; Regeln durchsuchen →
+        </button>
+      </div>
+      <div id="quick-preset-packs-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;">
+        <!-- Rendered by options.js -->
+      </div>
+    </div>
+
     <!-- URL Rules Table & Search/Filter Header -->
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
       <h2 style="font-size:16px; font-weight:700; color:#f8fafc;" id="table-heading">Konfigurierte URL-Regeln</h2>
@@ -2165,7 +2197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <thead>
         <tr>
           <th style="width: 36px; text-align: center;"><input type="checkbox" id="chk-all-rules" title="Alle Regeln auswählen oder abwählen"></th>
-          <th style="width: 60px;">Priorität</th>
+          <th style="width: 140px; text-align: center;" title="Priorität: Frühere Regeln werden zuerst abgeglichen. Zahl direkt eingeben, mit ⏫/▲/▼/⏬ bewegen oder per Drag & Drop sortieren">Priorität</th>
           <th>Farbe</th>
           <th>Regel-Name &amp; Symbol</th>
           <th>Match-Typ</th>
@@ -2561,6 +2593,56 @@ document.addEventListener('DOMContentLoaded', async () => {
     </div>
   </div>
 
+  <!-- Preset Packs Modal -->
+  <div id="preset-packs-modal-overlay" class="modal-overlay">
+    <div class="modal" style="max-width: 840px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="margin-bottom: 12px; padding-bottom: 10px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:22px;">✨</span>
+          <div>
+            <h2 class="modal-title" style="margin:0;">Workflow Preset-Packs</h2>
+            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Vorkonfigurierte Regel-Sets für Development, Social Media, Shopping oder Work</div>
+          </div>
+        </div>
+        <button id="preset-packs-modal-close" class="close-btn">&times;</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 280px 1fr; gap: 14px; min-height: 420px; flex: 1; overflow: hidden;">
+        <!-- Left: Packs List -->
+        <div style="overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;" id="preset-packs-list">
+          <!-- Rendered by options.js -->
+        </div>
+
+        <!-- Right: Active Pack Details & Rules -->
+        <div style="background: #111a2e; border: 1px solid #1e293b; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; min-height: 0;">
+          <div id="preset-pack-detail-header" style="border-bottom: 1px solid #1e293b; padding-bottom: 10px; margin-bottom: 10px;">
+            <!-- Header rendered by options.js -->
+          </div>
+
+          <div style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <input type="text" id="preset-pack-rule-search" class="form-input" placeholder="Regeln im Pack filtern..." style="font-size: 11px; padding: 5px 8px;">
+            <button type="button" id="btn-toggle-all-pack-rules" class="btn btn-secondary" style="font-size: 10px; padding: 5px 8px; white-space: nowrap;">Alle auswählen/abwählen</button>
+          </div>
+
+          <div id="preset-pack-rules-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px;">
+            <!-- Rule checkboxes rendered by options.js -->
+          </div>
+
+          <div style="border-top: 1px solid #1e293b; padding-top: 10px; margin-top: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <label class="check-label" style="font-size: 11px;">
+              <input type="checkbox" id="preset-pack-overwrite-conflicts" checked>
+              <span>Bestehende Regeln bei gleichem URL-Pattern aktualisieren</span>
+            </label>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" id="btn-import-pack-replace" class="btn btn-danger" style="font-size: 11px; padding: 6px 12px;" title="Ersetzt alle aktuellen Regeln komplett durch die ausgewählten Pack-Regeln">Alle Regeln ersetzen</button>
+              <button type="button" id="btn-import-pack-selected" class="btn btn-primary" style="font-size: 11px; padding: 6px 14px; background: #9333ea; border-color: #a855f7;" title="Fügt die ausgewählten Regeln zu bestehenden Regeln hinzu">+ Ausgewählte hinzufügen</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="options.js"></script>
 </body>
 </html>`;
@@ -2579,8 +2661,14 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 const DEFAULT_CONFIG = ${JSON.stringify(config, null, 2)};
+const PRESET_PACKS = ${presetPacksJson};
 let appConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 let editingRuleIndex = -1;
+let draggedRuleIndex = null;
+let selectedPresetPackId = (PRESET_PACKS && PRESET_PACKS[0]) ? PRESET_PACKS[0].id : 'workflow-development';
+let selectedPresetRuleIds = new Set(
+  (PRESET_PACKS && PRESET_PACKS[0] && PRESET_PACKS[0].rules) ? PRESET_PACKS[0].rules.map(r => r.id) : []
+);
 
 const hexMap = {
   blue: '#37adff',
@@ -2628,6 +2716,7 @@ async function loadConfig() {
   initLiveUrlMatcher();
   renderRules();
   initBulkToolbar();
+  initPresetPacks();
 }
 
 async function saveConfigToStorage() {
@@ -3803,11 +3892,48 @@ function renderRules() {
 
   visibleRules.forEach((rule, visibleIdx) => {
     const globalIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+    const totalRules = (appConfig.rules || []).length;
     const tr = document.createElement('tr');
     const isSelected = selectedRuleIds.has(rule.id);
     if (isSelected) {
       tr.classList.add('selected-row');
     }
+
+    // Drag & Drop for reordering
+    tr.draggable = true;
+    tr.addEventListener('dragstart', (e) => {
+      draggedRuleIndex = globalIdx;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(globalIdx));
+      tr.classList.add('dragging-row');
+    });
+    tr.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tr.classList.add('drag-over-row');
+    });
+    tr.addEventListener('dragleave', () => {
+      tr.classList.remove('drag-over-row');
+    });
+    tr.addEventListener('dragend', () => {
+      tr.classList.remove('dragging-row');
+      document.querySelectorAll('.drag-over-row').forEach((el) => el.classList.remove('drag-over-row'));
+      draggedRuleIndex = null;
+    });
+    tr.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      tr.classList.remove('drag-over-row');
+      if (draggedRuleIndex !== null && draggedRuleIndex !== globalIdx) {
+        const fromIdx = draggedRuleIndex;
+        const toIdx = globalIdx;
+        const [moved] = appConfig.rules.splice(fromIdx, 1);
+        appConfig.rules.splice(toIdx, 0, moved);
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      }
+      draggedRuleIndex = null;
+    });
 
     // 0. Selection Checkbox
     const tdCheck = document.createElement('td');
@@ -3828,58 +3954,142 @@ function renderRules() {
     tdCheck.appendChild(chk);
     tr.appendChild(tdCheck);
 
-    // 1. Priority
+    // 1. Priority (Drag Handle + Direct Input + ⏫ / ▲ / ▼ / ⏬)
     const tdPriority = document.createElement('td');
+    tdPriority.style.textAlign = 'center';
+    tdPriority.style.whiteSpace = 'nowrap';
     const pContainer = document.createElement('div');
-    pContainer.style.display = 'flex';
+    pContainer.style.display = 'inline-flex';
     pContainer.style.alignItems = 'center';
-    pContainer.style.gap = '4px';
+    pContainer.style.justifyContent = 'center';
+    pContainer.style.gap = '2px';
 
-    const pNum = document.createElement('span');
-    pNum.style.fontFamily = 'monospace';
-    pNum.style.color = '#94a3b8';
-    pNum.style.marginRight = '4px';
-    pNum.textContent = String(rule.priority || (globalIdx + 1));
-    pContainer.appendChild(pNum);
+    // Drag Handle
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'drag-handle';
+    dragHandle.textContent = '⋮⋮';
+    dragHandle.title = 'Regel per Drag & Drop an eine beliebige Position ziehen';
+    pContainer.appendChild(dragHandle);
 
-    if (globalIdx > 0) {
-      const upBtn = document.createElement('button');
-      upBtn.className = 'priority-btn';
-      upBtn.textContent = '▲';
-      upBtn.title = 'Nach oben';
-      upBtn.addEventListener('click', async () => {
-        const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
-        if (curIdx > 0) {
-          const temp = appConfig.rules[curIdx];
-          appConfig.rules[curIdx] = appConfig.rules[curIdx - 1];
-          appConfig.rules[curIdx - 1] = temp;
-          appConfig.rules.forEach((r, i) => r.priority = i + 1);
-          await saveConfigToStorage();
-          renderRules();
-        }
-      });
-      pContainer.appendChild(upBtn);
-    }
+    // Direct Input Field
+    const pInput = document.createElement('input');
+    pInput.type = 'number';
+    pInput.min = '1';
+    pInput.max = String(totalRules);
+    pInput.className = 'priority-input';
+    pInput.value = String(rule.priority || (globalIdx + 1));
+    pInput.title = 'Priorität direkt eingeben (1 bis ' + totalRules + ') und Enter drücken';
+    pInput.addEventListener('click', (e) => e.stopPropagation());
+    const commitDirectPriority = async () => {
+      let targetPrio = parseInt(pInput.value, 10);
+      if (isNaN(targetPrio)) {
+        pInput.value = String(rule.priority || (globalIdx + 1));
+        return;
+      }
+      targetPrio = Math.max(1, Math.min(targetPrio, (appConfig.rules || []).length));
+      const targetIdx = targetPrio - 1;
+      const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+      if (curIdx !== -1 && curIdx !== targetIdx) {
+        const [moved] = appConfig.rules.splice(curIdx, 1);
+        appConfig.rules.splice(targetIdx, 0, moved);
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      }
+    };
+    pInput.addEventListener('change', commitDirectPriority);
+    pInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        pInput.blur();
+      }
+    });
+    pContainer.appendChild(pInput);
 
-    if (globalIdx !== -1 && globalIdx < (appConfig.rules?.length || 0) - 1) {
-      const downBtn = document.createElement('button');
-      downBtn.className = 'priority-btn';
-      downBtn.textContent = '▼';
-      downBtn.title = 'Nach unten';
-      downBtn.addEventListener('click', async () => {
-        const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
-        if (curIdx !== -1 && curIdx < (appConfig.rules?.length || 0) - 1) {
-          const temp = appConfig.rules[curIdx];
-          appConfig.rules[curIdx] = appConfig.rules[curIdx + 1];
-          appConfig.rules[curIdx + 1] = temp;
-          appConfig.rules.forEach((r, i) => r.priority = i + 1);
-          await saveConfigToStorage();
-          renderRules();
-        }
-      });
-      pContainer.appendChild(downBtn);
-    }
+    // Navigation Buttons Group
+    const btnGroup = document.createElement('div');
+    btnGroup.style.display = 'inline-flex';
+    btnGroup.style.alignItems = 'center';
+    btnGroup.style.gap = '1px';
 
+    // Top ⏫
+    const topBtn = document.createElement('button');
+    topBtn.className = 'priority-btn';
+    topBtn.textContent = '⏫';
+    topBtn.title = 'Ganz nach oben (Platz #1)';
+    if (globalIdx === 0) topBtn.disabled = true;
+    topBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+      if (curIdx > 0) {
+        const [moved] = appConfig.rules.splice(curIdx, 1);
+        appConfig.rules.unshift(moved);
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      }
+    });
+    btnGroup.appendChild(topBtn);
+
+    // Up ▲
+    const upBtn = document.createElement('button');
+    upBtn.className = 'priority-btn';
+    upBtn.textContent = '▲';
+    upBtn.title = '1 Schritt nach oben';
+    if (globalIdx === 0) upBtn.disabled = true;
+    upBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+      if (curIdx > 0) {
+        const temp = appConfig.rules[curIdx];
+        appConfig.rules[curIdx] = appConfig.rules[curIdx - 1];
+        appConfig.rules[curIdx - 1] = temp;
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      }
+    });
+    btnGroup.appendChild(upBtn);
+
+    // Down ▼
+    const downBtn = document.createElement('button');
+    downBtn.className = 'priority-btn';
+    downBtn.textContent = '▼';
+    downBtn.title = '1 Schritt nach unten';
+    if (globalIdx === -1 || globalIdx >= (appConfig.rules?.length || 0) - 1) downBtn.disabled = true;
+    downBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+      if (curIdx !== -1 && curIdx < (appConfig.rules?.length || 0) - 1) {
+        const temp = appConfig.rules[curIdx];
+        appConfig.rules[curIdx] = appConfig.rules[curIdx + 1];
+        appConfig.rules[curIdx + 1] = temp;
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      }
+    });
+    btnGroup.appendChild(downBtn);
+
+    // Bottom ⏬
+    const bottomBtn = document.createElement('button');
+    bottomBtn.className = 'priority-btn';
+    bottomBtn.textContent = '⏬';
+    bottomBtn.title = 'Ganz nach unten (Letzter Platz)';
+    if (globalIdx === -1 || globalIdx >= (appConfig.rules?.length || 0) - 1) bottomBtn.disabled = true;
+    bottomBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const curIdx = (appConfig.rules || []).findIndex((r) => r.id === rule.id);
+      if (curIdx !== -1 && curIdx < (appConfig.rules?.length || 0) - 1) {
+        const [moved] = appConfig.rules.splice(curIdx, 1);
+        appConfig.rules.push(moved);
+        appConfig.rules.forEach((r, i) => r.priority = i + 1);
+        await saveConfigToStorage();
+        renderRules();
+      }
+    });
+    btnGroup.appendChild(bottomBtn);
+
+    pContainer.appendChild(btnGroup);
     tdPriority.appendChild(pContainer);
     tr.appendChild(tdPriority);
 
@@ -5334,9 +5544,330 @@ document.getElementById('btn-export')?.addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 });
 
+// -------------------------------------------------------------
+// Workflow Preset-Packs Modal & Quick Bar
+// -------------------------------------------------------------
+function initPresetPacks() {
+  const container = document.getElementById('quick-preset-packs-container');
+  if (container) {
+    container.innerHTML = '';
+    if (Array.isArray(PRESET_PACKS) && PRESET_PACKS.length > 0) {
+      PRESET_PACKS.forEach((pack) => {
+        const card = document.createElement('div');
+        card.className = 'quick-preset-card';
+        card.title = pack.name + ' (' + (pack.rules ? pack.rules.length : 0) + ' Regeln) – Klick für Pack-Details';
+        card.innerHTML =
+          '<div style="display:flex; align-items:center; gap:6px; min-width:0;">' +
+            '<span style="font-size:16px;">' + (pack.icon || '📦') + '</span>' +
+            '<span style="font-weight:600; font-size:11px; color:#f1f5f9; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(pack.name.split(' ')[0]) + '</span>' +
+          '</div>' +
+          '<span style="font-size:10px; font-family:monospace; background:rgba(168, 85, 247, 0.3); color:#d8b4fe; padding:1px 5px; border-radius:4px; font-weight:700;">' +
+            (pack.rules ? pack.rules.length : 0) +
+          '</span>';
+        card.addEventListener('click', () => {
+          openPresetPacksModal(pack.id);
+        });
+        container.appendChild(card);
+      });
+    }
+  }
+
+  document.getElementById('btn-open-preset-packs-modal')?.addEventListener('click', () => {
+    openPresetPacksModal(selectedPresetPackId);
+  });
+  document.getElementById('preset-packs-modal-close')?.addEventListener('click', () => {
+    closePresetPacksModal();
+  });
+  document.getElementById('preset-packs-modal-overlay')?.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'preset-packs-modal-overlay') {
+      closePresetPacksModal();
+    }
+  });
+  document.getElementById('preset-pack-rule-search')?.addEventListener('input', () => {
+    renderPresetPackDetails();
+  });
+  document.getElementById('btn-toggle-all-pack-rules')?.addEventListener('click', () => {
+    toggleAllPackRules();
+  });
+  document.getElementById('btn-import-pack-selected')?.addEventListener('click', async () => {
+    await importSelectedPresetPackRules(false);
+  });
+  document.getElementById('btn-import-pack-replace')?.addEventListener('click', async () => {
+    await importSelectedPresetPackRules(true);
+  });
+}
+
+function openPresetPacksModal(packId) {
+  if (packId) {
+    selectedPresetPackId = packId;
+    const pack = PRESET_PACKS.find((p) => p.id === packId);
+    if (pack && pack.rules) {
+      selectedPresetRuleIds = new Set(pack.rules.map((r) => r.id));
+    }
+  }
+  const sInp = document.getElementById('preset-pack-rule-search');
+  if (sInp) sInp.value = '';
+  renderPresetPacksModalList();
+  renderPresetPackDetails();
+  const modal = document.getElementById('preset-packs-modal-overlay');
+  if (modal) modal.classList.add('active');
+}
+
+function closePresetPacksModal() {
+  const modal = document.getElementById('preset-packs-modal-overlay');
+  if (modal) modal.classList.remove('active');
+}
+
+function renderPresetPacksModalList() {
+  const list = document.getElementById('preset-packs-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  PRESET_PACKS.forEach((pack) => {
+    const isSelected = pack.id === selectedPresetPackId;
+    const item = document.createElement('div');
+    item.className = 'preset-pack-item' + (isSelected ? ' active' : '');
+
+    let swatchesHtml = '';
+    if (pack.rules && pack.rules.length > 0) {
+      swatchesHtml =
+        '<div style="display:flex; gap:3px; margin-top:6px; align-items:center;">' +
+        pack.rules
+          .slice(0, 6)
+          .map((r) => '<span style="width:10px; height:10px; border-radius:50%; background:' + (r.color || '#37adff') + '; display:inline-block;"></span>')
+          .join('') +
+        '<span style="font-size:10px; color:#94a3b8; margin-left:4px;">' + (pack.tags ? pack.tags.slice(0, 2).join(', ') : '') + '</span>' +
+        '</div>';
+    }
+
+    item.innerHTML =
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px;">' +
+        '<div style="display:flex; align-items:center; gap:6px;">' +
+          '<span style="font-size:18px;">' + (pack.icon || '📦') + '</span>' +
+          '<div>' +
+            '<div style="font-weight:700; font-size:12px; color:#f8fafc;">' + escapeHtml(pack.name) + '</div>' +
+            '<div style="font-size:10px; color:#94a3b8;">' + (pack.rules ? pack.rules.length : 0) + ' Regeln</div>' +
+          '</div>' +
+        '</div>' +
+        '<span style="font-size:9px; font-weight:700; padding:2px 5px; border-radius:4px; background:' + (isSelected ? '#9333ea' : '#1e293b') + '; color:#fff;">' +
+          escapeHtml(pack.badge || '') +
+        '</span>' +
+      '</div>' +
+      '<div style="font-size:11px; color:#94a3b8; margin-top:4px; line-height:1.3;">' + escapeHtml(pack.description || '') + '</div>' +
+      swatchesHtml;
+
+    item.addEventListener('click', () => {
+      selectedPresetPackId = pack.id;
+      if (pack.rules) {
+        selectedPresetRuleIds = new Set(pack.rules.map((r) => r.id));
+      }
+      renderPresetPacksModalList();
+      renderPresetPackDetails();
+    });
+    list.appendChild(item);
+  });
+}
+
+function renderPresetPackDetails() {
+  const activePack = PRESET_PACKS.find((p) => p.id === selectedPresetPackId) || PRESET_PACKS[0];
+  if (!activePack) return;
+
+  const header = document.getElementById('preset-pack-detail-header');
+  if (header) {
+    header.innerHTML =
+      '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+        '<div style="display:flex; align-items:center; gap:8px;">' +
+          '<span style="font-size:24px;">' + (activePack.icon || '📦') + '</span>' +
+          '<div>' +
+            '<div style="font-weight:700; font-size:14px; color:#f8fafc;">' + escapeHtml(activePack.name) + '</div>' +
+            '<div style="font-size:11px; color:#94a3b8;">' + escapeHtml(activePack.description) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<span style="font-size:11px; font-family:monospace; background:#1e293b; color:#c084fc; padding:2px 8px; border-radius:12px; font-weight:700;">' +
+          (activePack.rules ? activePack.rules.length : 0) + ' Regeln' +
+        '</span>' +
+      '</div>';
+  }
+
+  const q = (document.getElementById('preset-pack-rule-search')?.value || '').toLowerCase().trim();
+  const rules = (activePack.rules || []).filter((r) => {
+    if (!q) return true;
+    return (
+      (r.name && r.name.toLowerCase().includes(q)) ||
+      (r.pattern && r.pattern.toLowerCase().includes(q)) ||
+      (r.containerName && r.containerName.toLowerCase().includes(q))
+    );
+  });
+
+  const container = document.getElementById('preset-pack-rules-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (rules.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; font-size:12px;">Keine Regeln für diesen Filter gefunden.</div>';
+    return;
+  }
+
+  rules.forEach((rule) => {
+    const isChecked = selectedPresetRuleIds.has(rule.id);
+    const row = document.createElement('label');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.style.padding = '8px 10px';
+    row.style.borderRadius = '6px';
+    row.style.background = isChecked ? 'rgba(168, 85, 247, 0.12)' : '#0f172a';
+    row.style.border = '1px solid ' + (isChecked ? 'rgba(168, 85, 247, 0.35)' : '#1e293b');
+    row.style.cursor = 'pointer';
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = isChecked;
+    chk.addEventListener('change', () => {
+      if (chk.checked) {
+        selectedPresetRuleIds.add(rule.id);
+      } else {
+        selectedPresetRuleIds.delete(rule.id);
+      }
+      renderPresetPackDetails();
+    });
+
+    const swatch = document.createElement('span');
+    swatch.style.width = '12px';
+    swatch.style.height = '12px';
+    swatch.style.borderRadius = '3px';
+    swatch.style.backgroundColor = rule.color || '#37adff';
+    swatch.style.display = 'inline-block';
+    swatch.style.flexShrink = '0';
+
+    const info = document.createElement('div');
+    info.style.flex = '1';
+    info.style.minWidth = '0';
+    info.innerHTML =
+      '<div style="display:flex; align-items:center; gap:6px;">' +
+        (rule.customEmoji ? '<span>' + rule.customEmoji + '</span>' : '') +
+        '<strong style="font-size:12px; color:#f8fafc;">' + escapeHtml(rule.name || rule.pattern) + '</strong>' +
+        '<span style="font-size:10px; color:#94a3b8; font-family:monospace; background:#1e293b; padding:1px 4px; border-radius:3px;">' + escapeHtml(rule.patternType) + '</span>' +
+      '</div>' +
+      '<div style="font-size:11px; font-family:monospace; color:#38bdf8; margin-top:2px;">' + escapeHtml(rule.pattern) + '</div>';
+
+    row.appendChild(chk);
+    row.appendChild(swatch);
+    row.appendChild(info);
+    container.appendChild(row);
+  });
+
+  const toggleBtn = document.getElementById('btn-toggle-all-pack-rules');
+  if (toggleBtn) {
+    const allSelected = rules.every((r) => selectedPresetRuleIds.has(r.id));
+    toggleBtn.textContent = allSelected ? 'Alle abwählen' : 'Alle auswählen';
+  }
+}
+
+function toggleAllPackRules() {
+  const activePack = PRESET_PACKS.find((p) => p.id === selectedPresetPackId) || PRESET_PACKS[0];
+  if (!activePack || !activePack.rules) return;
+  const q = (document.getElementById('preset-pack-rule-search')?.value || '').toLowerCase().trim();
+  const rules = activePack.rules.filter((r) => {
+    if (!q) return true;
+    return (
+      (r.name && r.name.toLowerCase().includes(q)) ||
+      (r.pattern && r.pattern.toLowerCase().includes(q))
+    );
+  });
+  const allSelected = rules.every((r) => selectedPresetRuleIds.has(r.id));
+  if (allSelected) {
+    rules.forEach((r) => selectedPresetRuleIds.delete(r.id));
+  } else {
+    rules.forEach((r) => selectedPresetRuleIds.add(r.id));
+  }
+  renderPresetPackDetails();
+}
+
+async function importSelectedPresetPackRules(replaceExisting) {
+  const activePack = PRESET_PACKS.find((p) => p.id === selectedPresetPackId) || PRESET_PACKS[0];
+  if (!activePack || !activePack.rules) return;
+
+  const chosenRules = activePack.rules.filter((r) => selectedPresetRuleIds.has(r.id));
+  if (chosenRules.length === 0) {
+    alert('Bitte wählen Sie mindestens eine Regel aus dem Pack aus.');
+    return;
+  }
+
+  if (replaceExisting) {
+    const ok = confirm(
+      'Möchten Sie wirklich alle bestehenden ' +
+        (appConfig.rules || []).length +
+        ' Regeln durch die ' +
+        chosenRules.length +
+        ' ausgewählten Regeln aus "' +
+        activePack.name +
+        '" ersetzen?'
+    );
+    if (!ok) return;
+
+    appConfig.rules = chosenRules.map((r, idx) => ({
+      ...r,
+      id: 'rule-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      priority: idx + 1,
+    }));
+  } else {
+    const overwriteConflicts = document.getElementById('preset-pack-overwrite-conflicts')?.checked !== false;
+    const currentRules = [...(appConfig.rules || [])];
+
+    chosenRules.forEach((presetRule) => {
+      const matchIdx = currentRules.findIndex(
+        (cr) =>
+          cr.patternType === presetRule.patternType &&
+          cr.pattern.trim().toLowerCase() === presetRule.pattern.trim().toLowerCase()
+      );
+
+      if (matchIdx !== -1 && overwriteConflicts) {
+        currentRules[matchIdx] = {
+          ...currentRules[matchIdx],
+          name: presetRule.name,
+          color: presetRule.color,
+          firefoxContainerColor: presetRule.firefoxContainerColor,
+          firefoxContainerIcon: presetRule.firefoxContainerIcon,
+          customEmoji: presetRule.customEmoji,
+          containerName: presetRule.containerName,
+          colorMode: presetRule.colorMode,
+          accentBorder: presetRule.accentBorder,
+          enabled: true,
+        };
+      } else {
+        currentRules.push({
+          ...presetRule,
+          id: 'rule-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+          priority: currentRules.length + 1,
+        });
+      }
+    });
+
+    currentRules.forEach((r, idx) => {
+      r.priority = idx + 1;
+    });
+    appConfig.rules = currentRules;
+  }
+
+  await saveConfigToStorage();
+  renderRules();
+  closePresetPacksModal();
+  alert(
+    '✓ ' +
+      chosenRules.length +
+      ' Regeln aus "' +
+      activePack.name +
+      '" erfolgreich ' +
+      (replaceExisting ? 'übernommen' : 'hinzugefügt') +
+      '!'
+  );
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
   initBulkToolbar();
+  initPresetPacks();
 });
 `;
 

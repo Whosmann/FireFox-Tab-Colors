@@ -3,6 +3,9 @@ import {
   Plus, 
   ArrowUp, 
   ArrowDown, 
+  ChevronsUp,
+  ChevronsDown,
+  GripVertical,
   Edit3, 
   Trash2, 
   Copy, 
@@ -400,6 +403,94 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
       r.priority = idx + 1;
     });
     onUpdateRules(newRules);
+  };
+
+  const handleMoveToTop = (index: number) => {
+    if (index === 0) return;
+    const newRules = [...rules];
+    const [moved] = newRules.splice(index, 1);
+    newRules.unshift(moved);
+    newRules.forEach((r, idx) => {
+      r.priority = idx + 1;
+    });
+    onUpdateRules(newRules);
+  };
+
+  const handleMoveToBottom = (index: number) => {
+    if (index === rules.length - 1) return;
+    const newRules = [...rules];
+    const [moved] = newRules.splice(index, 1);
+    newRules.push(moved);
+    newRules.forEach((r, idx) => {
+      r.priority = idx + 1;
+    });
+    onUpdateRules(newRules);
+  };
+
+  const handleMoveToPosition = (fromIndex: number, targetPriority: number) => {
+    if (isNaN(targetPriority) || fromIndex < 0 || fromIndex >= rules.length) return;
+    const clamped = Math.max(1, Math.min(targetPriority, rules.length));
+    const targetIndex = clamped - 1;
+    if (fromIndex === targetIndex) return;
+
+    const newRules = [...rules];
+    const [moved] = newRules.splice(fromIndex, 1);
+    newRules.splice(targetIndex, 0, moved);
+    newRules.forEach((r, idx) => {
+      r.priority = idx + 1;
+    });
+    onUpdateRules(newRules);
+  };
+
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [priorityInputMap, setPriorityInputMap] = useState<{ [ruleId: string]: string }>({});
+
+  const handlePriorityInputChange = (ruleId: string, val: string) => {
+    setPriorityInputMap((prev) => ({ ...prev, [ruleId]: val }));
+  };
+
+  const handlePriorityInputCommit = (ruleId: string, fromIndex: number) => {
+    const rawVal = priorityInputMap[ruleId];
+    if (rawVal !== undefined && rawVal.trim() !== '') {
+      const parsed = parseInt(rawVal.trim(), 10);
+      if (!isNaN(parsed)) {
+        handleMoveToPosition(fromIndex, parsed);
+      }
+    }
+    setPriorityInputMap((prev) => {
+      const next = { ...prev };
+      delete next[ruleId];
+      return next;
+    });
+  };
+
+  const handleDragStart = (index: number, e: React.DragEvent) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  };
+
+  const handleDragOver = (index: number, e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (targetIndex: number, e: React.DragEvent) => {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== targetIndex) {
+      handleMoveToPosition(draggedIndex, targetIndex + 1);
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const handleDeleteRule = (id: string) => {
@@ -1357,7 +1448,9 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                     />
                   </label>
                 </th>
-                <th className="py-3 px-3 w-12 text-center">Priority</th>
+                <th className="py-3 px-3 w-36 text-center" title="Priorität: Zahl direkt eingeben, mit Pfeilen bewegen (⏫/▲/▼/⏬) oder per Drag & Drop sortieren">
+                  Priorität
+                </th>
                 <th className="py-3 px-3">Tab Color</th>
                 <th className="py-3 px-3">Rule Name</th>
                 <th className="py-3 px-3">Type</th>
@@ -1380,12 +1473,18 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                   return (
                     <tr
                       key={rule.id}
+                      onDragOver={(e) => handleDragOver(originalIndex, e)}
+                      onDrop={(e) => handleDrop(originalIndex, e)}
                       className={`hover:bg-slate-50/70 transition-colors ${
                         isSelected
                           ? 'bg-sky-50/80 hover:bg-sky-100/60'
                           : !rule.enabled
                           ? 'opacity-50 bg-slate-50/30'
                           : ''
+                      } ${
+                        dragOverIndex === originalIndex ? 'border-t-2 border-sky-500 bg-sky-50/60' : ''
+                      } ${
+                        draggedIndex === originalIndex ? 'opacity-30' : ''
                       }`}
                     >
                       {/* Selection Checkbox */}
@@ -1405,27 +1504,79 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                       </td>
 
                       {/* Priority Ordering */}
-                      <td className="py-2.5 px-3 text-center">
-                        <div className="flex items-center justify-center gap-0.5">
-                          <span className="font-mono text-slate-400 text-xs tabular-nums mr-1">
-                            {originalIndex + 1}
-                          </span>
-                          <div className="flex flex-col">
+                      <td className="py-2 px-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {/* Drag & Drop Handle */}
+                          <div
+                            draggable
+                            onDragStart={(e) => handleDragStart(originalIndex, e)}
+                            onDragEnd={handleDragEnd}
+                            className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-600 p-0.5 rounded transition-colors touch-none select-none"
+                            title="Regel per Drag & Drop an eine beliebige Position ziehen"
+                          >
+                            <GripVertical className="w-3.5 h-3.5" />
+                          </div>
+
+                          {/* Direct Priority Number Input */}
+                          <input
+                            type="number"
+                            min={1}
+                            max={rules.length}
+                            value={priorityInputMap[rule.id] ?? (originalIndex + 1)}
+                            onChange={(e) => handlePriorityInputChange(rule.id, e.target.value)}
+                            onBlur={() => handlePriorityInputCommit(rule.id, originalIndex)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handlePriorityInputCommit(rule.id, originalIndex);
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="w-10 h-7 text-center font-mono text-xs tabular-nums bg-white border border-slate-200 hover:border-sky-400 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 rounded px-0.5 py-0.5 text-slate-700 font-semibold shadow-2xs"
+                            title={`Priorität direkt als Zahl eingeben (1 bis ${rules.length}) & Enter drücken`}
+                            aria-label={`Priorität für ${rule.name}`}
+                          />
+
+                          {/* Quick Navigation Buttons */}
+                          <div className="flex items-center gap-0.5">
                             <button
+                              type="button"
+                              onClick={() => handleMoveToTop(originalIndex)}
+                              disabled={originalIndex === 0}
+                              className="text-slate-400 hover:text-sky-600 disabled:opacity-20 transition-colors p-1 rounded hover:bg-slate-100"
+                              title="Ganz nach oben (Platz #1)"
+                              aria-label="Ganz nach oben verschieben"
+                            >
+                              <ChevronsUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleMoveUp(originalIndex)}
                               disabled={originalIndex === 0}
-                              className="text-slate-400 hover:text-slate-700 disabled:opacity-20 transition-colors p-0.5"
-                              title="Move up in priority"
+                              className="text-slate-400 hover:text-slate-700 disabled:opacity-20 transition-colors p-1 rounded hover:bg-slate-100"
+                              title="1 Schritt nach oben"
+                              aria-label="Einen Schritt nach oben verschieben"
                             >
                               <ArrowUp className="w-3 h-3" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleMoveDown(originalIndex)}
                               disabled={originalIndex === rules.length - 1}
-                              className="text-slate-400 hover:text-slate-700 disabled:opacity-20 transition-colors p-0.5"
-                              title="Move down in priority"
+                              className="text-slate-400 hover:text-slate-700 disabled:opacity-20 transition-colors p-1 rounded hover:bg-slate-100"
+                              title="1 Schritt nach unten"
+                              aria-label="Einen Schritt nach unten verschieben"
                             >
                               <ArrowDown className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveToBottom(originalIndex)}
+                              disabled={originalIndex === rules.length - 1}
+                              className="text-slate-400 hover:text-sky-600 disabled:opacity-20 transition-colors p-1 rounded hover:bg-slate-100"
+                              title="Ganz nach unten (Letzter Platz)"
+                              aria-label="Ganz nach unten verschieben"
+                            >
+                              <ChevronsDown className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>

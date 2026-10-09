@@ -1015,7 +1015,9 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
 
               let tabBg: string | undefined = undefined;
               let tabBorderTop = '3px solid transparent';
-              let tabBorder = 'none';
+              let tabBorderRight = 'none';
+              let tabBorderBottom = 'none';
+              let tabBorderLeft = 'none';
               let tabShadow = 'none';
 
               if (isActive) {
@@ -1025,8 +1027,12 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                     tabBg = baseToolbarBg;
                     tabBorderTop = effectiveIndicatorColor ? `3px solid ${effectiveIndicatorColor}` : '3px solid transparent';
                   } else if (hybridTabIndicatorStyle === 'glow_border') {
+                    const glowBorder = effectiveIndicatorColor ? `2px solid ${effectiveIndicatorColor}` : 'none';
                     tabBg = effectiveIndicatorColor ? hexToRgba(effectiveIndicatorColor, opacity * 0.7) : baseToolbarBg;
-                    tabBorder = effectiveIndicatorColor ? `2px solid ${effectiveIndicatorColor}` : 'none';
+                    tabBorderTop = glowBorder;
+                    tabBorderRight = glowBorder;
+                    tabBorderBottom = glowBorder;
+                    tabBorderLeft = glowBorder;
                     tabShadow = effectiveIndicatorColor ? `0 0 10px ${effectiveIndicatorColor}66` : 'none';
                   } else {
                     // 'accent_line_and_fill' (Standard)
@@ -1051,8 +1057,10 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                   }`}
                   style={{
                     backgroundColor: tabBg,
-                    borderTop: tabBorder !== 'none' ? undefined : tabBorderTop,
-                    border: tabBorder !== 'none' ? tabBorder : undefined,
+                    borderTop: tabBorderTop,
+                    borderRight: tabBorderRight,
+                    borderBottom: tabBorderBottom,
+                    borderLeft: tabBorderLeft,
                     boxShadow: tabShadow !== 'none' ? tabShadow : undefined,
                     color: uiTextColor,
                   }}
