@@ -651,7 +651,7 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center justify-between pt-1 cursor-pointer select-none">
               <div>
                 <div className="text-xs font-medium text-slate-800">
                   Page Viewport Top Accent Line
@@ -664,9 +664,9 @@ export const RuleEditorModal: React.FC<RuleEditorModalProps> = ({
                 type="checkbox"
                 checked={accentBorder}
                 onChange={(e) => setAccentBorder(e.target.checked)}
-                className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-slate-300"
+                className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer"
               />
-            </div>
+            </label>
           </div>
 
           {/* Live Tab Preview Box */}

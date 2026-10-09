@@ -1335,23 +1335,27 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 <th className="py-3 px-3 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={allFilteredAreSelected}
-                    ref={(el) => {
-                      if (el) {
-                        el.indeterminate = isIndeterminate;
-                      }
-                    }}
-                    onChange={handleSelectAllVisible}
-                    aria-label="Alle sichtbaren Regeln auswählen oder abwählen"
+                  <label
+                    className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer select-none"
                     title={
                       allFilteredAreSelected
                         ? 'Alle sichtbaren Regeln abwählen'
                         : 'Alle sichtbaren Regeln auswählen'
                     }
-                    className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 cursor-pointer transition-colors"
-                  />
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allFilteredAreSelected}
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate = isIndeterminate;
+                        }
+                      }}
+                      onChange={handleSelectAllVisible}
+                      aria-label="Alle sichtbaren Regeln auswählen oder abwählen"
+                      className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 cursor-pointer transition-colors"
+                    />
+                  </label>
                 </th>
                 <th className="py-3 px-3 w-12 text-center">Priority</th>
                 <th className="py-3 px-3">Tab Color</th>
@@ -1385,14 +1389,19 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                       }`}
                     >
                       {/* Selection Checkbox */}
-                      <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={(e) => handleToggleSelectRule(rule.id, e)}
-                          aria-label={`Regel ${rule.name} auswählen`}
-                          className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 cursor-pointer transition-colors"
-                        />
+                      <td className="py-2.5 px-3 text-center">
+                        <label
+                          className="inline-flex items-center justify-center p-2.5 -m-2.5 cursor-pointer select-none"
+                          title={isSelected ? `Regel "${rule.name}" abwählen` : `Regel "${rule.name}" auswählen`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleToggleSelectRule(rule.id, e)}
+                            aria-label={`Regel ${rule.name} auswählen`}
+                            className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 cursor-pointer transition-colors"
+                          />
+                        </label>
                       </td>
 
                       {/* Priority Ordering */}
@@ -1750,7 +1759,27 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                   });
 
                   const selectedInActivePackCount = activePack.rules.filter((r) => selectedPresetRuleIds.has(r.id)).length;
-                  const allActivePackSelected = activePack.rules.length > 0 && selectedInActivePackCount === activePack.rules.length;
+                  const isFiltered = presetRuleSearchQuery.trim().length > 0;
+                  const rulesInScope = isFiltered ? filteredPackRules : activePack.rules;
+                  const selectedInScopeCount = rulesInScope.filter((r) => selectedPresetRuleIds.has(r.id)).length;
+                  const allInScopeSelected = rulesInScope.length > 0 && selectedInScopeCount === rulesInScope.length;
+                  const isPackIndeterminate = selectedInScopeCount > 0 && !allInScopeSelected;
+
+                  const handleToggleAllInScope = () => {
+                    if (allInScopeSelected) {
+                      setSelectedPresetRuleIds((prev) => {
+                        const next = new Set(prev);
+                        rulesInScope.forEach((r) => next.delete(r.id));
+                        return next;
+                      });
+                    } else {
+                      setSelectedPresetRuleIds((prev) => {
+                        const next = new Set(prev);
+                        rulesInScope.forEach((r) => next.add(r.id));
+                        return next;
+                      });
+                    }
+                  };
 
                   return (
                     <>
@@ -1789,26 +1818,31 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              if (allActivePackSelected) {
-                                handleDeselectAllPresetRules();
-                              } else {
-                                handleSelectAllPresetRules(activePack.rules);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors"
+                            onClick={handleToggleAllInScope}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors"
                           >
                             <input
                               type="checkbox"
                               readOnly
-                              checked={allActivePackSelected}
+                              tabIndex={-1}
+                              checked={allInScopeSelected}
+                              ref={(el) => {
+                                if (el) {
+                                  el.indeterminate = isPackIndeterminate;
+                                }
+                              }}
                               className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer pointer-events-none"
                             />
-                            <span>{allActivePackSelected ? 'Alle abwählen' : 'Alle auswählen'}</span>
+                            <span>
+                              {allInScopeSelected
+                                ? (isFiltered ? 'Gefilterte abwählen' : 'Alle abwählen')
+                                : (isFiltered ? 'Gefilterte auswählen' : 'Alle auswählen')}
+                            </span>
                           </button>
 
-                          <span className="text-xs font-semibold text-purple-900 bg-purple-100/70 px-2.5 py-1 rounded-lg">
+                          <span className="text-xs font-semibold text-purple-900 bg-purple-100/70 px-2.5 py-1.5 rounded-lg">
                             {selectedInActivePackCount} von {activePack.rules.length} Regeln ausgewählt
+                            {isFiltered && ` (${selectedInScopeCount} von ${filteredPackRules.length} gefilterten)`}
                           </span>
                         </div>
 
@@ -1854,22 +1888,29 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                               <div
                                 key={rule.id}
                                 onClick={() => handleTogglePresetRule(rule.id)}
-                                className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 shadow-2xs transition-all cursor-pointer ${
+                                role="checkbox"
+                                aria-checked={isChecked}
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                  if (e.key === ' ' || e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleTogglePresetRule(rule.id);
+                                  }
+                                }}
+                                className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 shadow-2xs transition-all cursor-pointer select-none ${
                                   isChecked
-                                    ? 'bg-white border-purple-300 ring-1 ring-purple-400/20 shadow-xs'
+                                    ? 'bg-purple-50/70 border-purple-300 ring-1 ring-purple-400/30 shadow-xs'
                                     : 'bg-white/80 border-slate-200 hover:border-slate-300 opacity-80 hover:opacity-100'
                                 }`}
                               >
-                                <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex items-center gap-3 min-w-0 pointer-events-none">
                                   {/* Checkbox for batch select */}
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
-                                    onChange={(e) => {
-                                      e.stopPropagation();
-                                      handleTogglePresetRule(rule.id);
-                                    }}
-                                    className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
+                                    readOnly
+                                    tabIndex={-1}
+                                    className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 shrink-0 pointer-events-none"
                                   />
 
                                   {/* Color indicator and emoji */}
@@ -1903,7 +1944,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
 
                                 <div className="flex items-center gap-2 shrink-0">
                                   {/* Container badge */}
-                                  <div className="hidden sm:flex flex-col items-end">
+                                  <div className="hidden sm:flex flex-col items-end pointer-events-none">
                                     <span
                                       className="px-2 py-0.5 rounded text-[10px] font-semibold border"
                                       style={{
@@ -1942,7 +1983,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                                     }
                                   >
                                     <Plus className="w-3.5 h-3.5" />
-                                    <span>{isAlreadyPresent ? 'Aktualisieren' : '+ Einzeln laden'}</span>
+                                    <span>{isAlreadyPresent ? 'Aktualisieren' : 'Einzeln laden'}</span>
                                   </button>
                                 </div>
                               </div>
