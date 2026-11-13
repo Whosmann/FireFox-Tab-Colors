@@ -23,8 +23,8 @@ import {
   Edit3,
   Check
 } from 'lucide-react';
-import { TabColorRule, TabSimulatorItem, BaseThemeMode, HybridWindowBehavior, HybridTabIndicatorStyle, ColorMode, UrlPatternType, FirefoxContainerColor } from '../types/extension';
-import { matchUrlAgainstRules, hexToRgba, FIREFOX_CONTAINER_COLORS } from '../utils/urlMatcher';
+import { TabColorRule, TabSimulatorItem, BaseThemeMode, HybridWindowBehavior, HybridTabIndicatorStyle, ColorMode, UrlPatternType, FirefoxContainerColor, UnmatchedActiveTabStyle } from '../types/extension';
+import { matchUrlAgainstRules, hexToRgba, FIREFOX_CONTAINER_COLORS, getUnmatchedActiveTabAppearance } from '../utils/urlMatcher';
 import { ChromaTestLogo } from './ChromaTestLogo';
 
 interface FirefoxTabSimulatorProps {
@@ -42,6 +42,10 @@ interface FirefoxTabSimulatorProps {
   hybridWindowBehavior?: HybridWindowBehavior;
   hybridTabIndicatorStyle?: HybridTabIndicatorStyle;
   hybridIndicatorColor?: string;
+  unmatchedActiveTabStyle?: UnmatchedActiveTabStyle;
+  unmatchedActiveTabBg?: string;
+  unmatchedActiveTabLine?: string;
+  enableUnmatchedTabLine?: boolean;
   defaultColor?: string;
   defaultMode?: ColorMode;
   onChangeOpacity?: (opacity: number) => void;
@@ -199,6 +203,10 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
   hybridWindowBehavior = 'static_window',
   hybridTabIndicatorStyle = 'accent_line_and_fill',
   hybridIndicatorColor,
+  unmatchedActiveTabStyle = 'subtle_lift',
+  unmatchedActiveTabBg,
+  unmatchedActiveTabLine,
+  enableUnmatchedTabLine = true,
   defaultColor = '#37adff',
   defaultMode = 'container',
   onChangeOpacity,
@@ -254,6 +262,18 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
     : baseThemeMode === 'light' || browserTheme === 'light'
     ? '#15141a'
     : '#fbfbfe';
+
+  const unmatchedEval = getUnmatchedActiveTabAppearance({
+    frameHex: tabStripBg,
+    toolbarHex: baseToolbarBg,
+    textHex: uiTextColor,
+    defaultColor,
+    activeTabOpacity,
+    unmatchedActiveTabStyle,
+    unmatchedActiveTabBg,
+    unmatchedActiveTabLine,
+    enableUnmatchedTabLine,
+  });
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const activeMatch = matchUrlAgainstRules(activeTab?.url || '', rules);
@@ -876,10 +896,18 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
             </button>
           </div>
 
-          {/* Active Tab Opacity Control */}
-          {onChangeOpacity && (
-            <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
-              <span className="text-[11px] font-semibold text-slate-600">Tab-Deckkraft:</span>
+          {/* Active Tab Opacity & Focus Glow Control */}
+          <div className="flex items-center gap-2 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
+            <span
+              className="w-2 h-2 rounded-full shrink-0 transition-all"
+              style={{
+                backgroundColor: activeMatch.matched && activeMatch.rule?.color ? activeMatch.rule.color : (defaultColor || '#37adff'),
+                boxShadow: `0 0 ${Math.round(4 + (activeTabOpacity ?? 0.35) * 10)}px ${activeMatch.matched && activeMatch.rule?.color ? activeMatch.rule.color : (defaultColor || '#37adff')}`,
+              }}
+              title="Live Fokus-Glow Intensität entsprechend der Tab-Deckkraft"
+            />
+            <span className="text-[11px] font-semibold text-slate-600">Fokus &amp; Deckkraft:</span>
+            {onChangeOpacity && (
               <input 
                 type="range"
                 min="0.15"
@@ -888,13 +916,13 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                 value={activeTabOpacity ?? 0.35}
                 onChange={(e) => onChangeOpacity(parseFloat(e.target.value))}
                 className="w-16 accent-sky-600 cursor-pointer h-1.5"
-                title="Deckkraft des aktiven Tabs anpassen (z. B. 35% für optimalen Favicon-Kontrast)"
+                title="Deckkraft & Fokus-Highlight des aktiven Tabs anpassen (z. B. 35% für optimalen Favicon-Kontrast)"
               />
-              <span className="font-mono text-[11px] font-bold text-sky-700 min-w-[28px]">
-                {Math.round((activeTabOpacity ?? 0.35) * 100)}%
-              </span>
-            </div>
-          )}
+            )}
+            <span className="font-mono text-[11px] font-bold text-sky-700 min-w-[30px]">
+              {Math.round((activeTabOpacity ?? 0.35) * 100)}%
+            </span>
+          </div>
 
           {/* Regenerate Sample Tabs Button */}
           <button
@@ -985,10 +1013,10 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
       >
         {/* Top Window Titlebar & Tab Strip */}
         <div
-          className="pt-2 px-2 flex items-end gap-1 overflow-x-auto select-none"
+          className="pt-2.5 px-2 flex items-end gap-1.5 overflow-x-auto select-none"
           style={{
             backgroundColor: tabStripBg,
-            minHeight: '44px',
+            minHeight: '48px',
           }}
         >
           {/* Window action dots */}
@@ -999,7 +1027,7 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
           </div>
 
           {/* Tab Strip Items */}
-          <div className="flex items-end gap-1 flex-1 overflow-x-auto pb-0">
+          <div className="flex items-end gap-1.5 flex-1 overflow-x-auto pb-0 pt-1 px-1">
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
               const match = matchUrlAgainstRules(tab.url, rules);
@@ -1010,19 +1038,43 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                 ? match.rule.tabOpacity
                 : (activeTabOpacity !== undefined ? activeTabOpacity : 0.35);
 
-              // Effective indicator color for active tab
-              const effectiveIndicatorColor = hybridIndicatorColor || tabColor || (isActive ? (defaultColor || '#37adff') : null);
+              // Effective indicator color for active tab WITH a rule
+              const effectiveIndicatorColor = match.matched
+                ? (hybridIndicatorColor || tabColor || defaultColor || '#37adff')
+                : null;
+
+              // Focused highlight color (for both matched and unmatched active tabs)
+              const focusAccentColor = effectiveIndicatorColor
+                || (unmatchedEval.tabLineHex && unmatchedEval.tabLineHex !== 'transparent'
+                  ? unmatchedEval.tabLineHex
+                  : (defaultColor || '#37adff'));
 
               let tabBg: string | undefined = undefined;
               let tabBorderTop = '3px solid transparent';
-              let tabBorderRight = 'none';
+              let tabBorderRight = '1px solid rgba(148, 163, 184, 0.14)';
               let tabBorderBottom = 'none';
-              let tabBorderLeft = 'none';
+              let tabBorderLeft = '1px solid transparent';
               let tabShadow = 'none';
 
               if (isActive) {
-                if (hybridWindowBehavior === 'static_window') {
-                  // In static window hybrid mode:
+                const sideHighlightColor = hexToRgba(focusAccentColor, Math.min(0.8, 0.25 + opacity * 0.5));
+                const glowBlurPx = Math.round(10 + opacity * 18);
+                const glowSpreadAlpha = Math.min(0.85, 0.22 + opacity * 0.58);
+                const focusRingAlpha = Math.min(0.92, 0.32 + opacity * 0.55);
+                const innerTopSheenAlpha = (baseThemeMode === 'light' || browserTheme === 'light')
+                  ? 0.75
+                  : Math.min(0.5, 0.15 + opacity * 0.35);
+
+                tabBorderLeft = `1px solid ${sideHighlightColor}`;
+                tabBorderRight = `1px solid ${sideHighlightColor}`;
+                tabShadow = `0 -3px ${glowBlurPx}px -1px ${hexToRgba(focusAccentColor, glowSpreadAlpha)}, 0 0 0 1px ${hexToRgba(focusAccentColor, focusRingAlpha)}, inset 0 1px 0 0 rgba(255, 255, 255, ${innerTopSheenAlpha}), 0 6px 14px -3px rgba(0, 0, 0, 0.45)`;
+
+                if (!match.matched) {
+                  // Aktiver Tab OHNE Regel: Nutzt das konfigurierte Theme-Highlighting für Tabs ohne Regel
+                  tabBg = unmatchedEval.tabBgCss;
+                  tabBorderTop = unmatchedEval.tabLineCss;
+                } else if (hybridWindowBehavior === 'static_window') {
+                  // In static window hybrid mode (with rule):
                   if (hybridTabIndicatorStyle === 'line_only') {
                     tabBg = baseToolbarBg;
                     tabBorderTop = effectiveIndicatorColor ? `3px solid ${effectiveIndicatorColor}` : '3px solid transparent';
@@ -1033,7 +1085,9 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                     tabBorderRight = glowBorder;
                     tabBorderBottom = glowBorder;
                     tabBorderLeft = glowBorder;
-                    tabShadow = effectiveIndicatorColor ? `0 0 10px ${effectiveIndicatorColor}66` : 'none';
+                    tabShadow = effectiveIndicatorColor
+                      ? `0 0 ${Math.round(12 + opacity * 16)}px ${hexToRgba(effectiveIndicatorColor, Math.min(0.9, 0.35 + opacity * 0.55))}, inset 0 0 8px ${hexToRgba(effectiveIndicatorColor, opacity * 0.35)}`
+                      : tabShadow;
                   } else {
                     // 'accent_line_and_fill' (Standard)
                     tabBg = effectiveIndicatorColor ? hexToRgba(effectiveIndicatorColor, opacity) : baseToolbarBg;
@@ -1050,10 +1104,11 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                 <div
                   key={tab.id}
                   onClick={() => handleSelectTab(tab)}
-                  className={`group relative flex items-center gap-2 px-3 py-2 text-xs font-medium cursor-pointer transition-all duration-150 min-w-[140px] max-w-[220px] rounded-t-lg select-none shrink-0 ${
+                  aria-selected={isActive}
+                  className={`group relative flex items-center gap-2 px-3 py-2 text-xs font-medium cursor-pointer transition-all duration-200 min-w-[155px] max-w-[235px] rounded-t-lg select-none shrink-0 ${
                     isActive
-                      ? 'shadow-sm font-semibold'
-                      : 'opacity-70 hover:opacity-100 hover:bg-black/10'
+                      ? 'z-10 -translate-y-[1px] font-semibold'
+                      : 'opacity-65 hover:opacity-95 translate-y-[1px] hover:bg-black/10'
                   }`}
                   style={{
                     backgroundColor: tabBg,
@@ -1065,9 +1120,19 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                     color: uiTextColor,
                   }}
                 >
+                  {/* Focused State Radial Glow & Highlight Overlay (reflecting activeTabOpacity) */}
+                  {isActive && (
+                    <div
+                      className="pointer-events-none absolute inset-0 rounded-t-lg transition-opacity duration-200"
+                      style={{
+                        background: `radial-gradient(120% 90% at 50% 0%, ${hexToRgba(focusAccentColor, Math.min(0.45, 0.1 + opacity * 0.42))} 0%, transparent 75%)`,
+                      }}
+                    />
+                  )}
+
                   {/* Favicon */}
                   <span 
-                    className="text-sm shrink-0 flex items-center justify-center transition-all"
+                    className="relative z-10 text-sm shrink-0 flex items-center justify-center transition-all"
                     style={{
                       filter: (enableFaviconContrastHalo !== false && isActive && tabColor)
                         ? (browserTheme === 'dark'
@@ -1091,7 +1156,7 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                   </span>
 
                   {/* Title & Container Subtitle */}
-                  <div className="flex flex-col min-w-0 flex-1">
+                  <div className="relative z-10 flex flex-col min-w-0 flex-1">
                     <span className="truncate text-xs font-medium leading-tight flex items-center gap-1.5">
                       {match.matched && match.rule?.customEmoji && match.rule.enableTitleEmoji !== false && (
                         <span
@@ -1104,23 +1169,51 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                       )}
                       <span className="truncate font-semibold">{tab.title}</span>
                     </span>
-                    {containerName && (
-                      <span
-                        className="text-[10px] truncate font-normal opacity-90 leading-none mt-0.5 flex items-center gap-1"
-                        style={{ color: tabColor || '#38bdf8' }}
-                      >
-                        {match.matched && match.rule?.customEmoji && (
-                          <span className="font-bold">{match.rule.customEmoji}</span>
-                        )}
-                        <span>{containerName}</span>
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                      {containerName ? (
+                        <span
+                          className="text-[10px] truncate font-normal opacity-95 leading-none flex items-center gap-1"
+                          style={{ color: tabColor || '#38bdf8' }}
+                        >
+                          {match.matched && match.rule?.customEmoji && (
+                            <span className="font-bold">{match.rule.customEmoji}</span>
+                          )}
+                          <span className="truncate">{containerName}</span>
+                        </span>
+                      ) : isActive ? (
+                        <span className="text-[9px] font-medium opacity-75 leading-none truncate">
+                          Ohne Regel · Fokus aktiv
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
+
+                  {/* Active Focus Indicator Pill (reflecting activeTabOpacity) */}
+                  {isActive && (
+                    <span
+                      className="relative z-10 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold tracking-tight shrink-0"
+                      style={{
+                        backgroundColor: hexToRgba(focusAccentColor, Math.min(0.38, 0.14 + opacity * 0.28)),
+                        color: uiTextColor,
+                        boxShadow: `0 0 6px ${hexToRgba(focusAccentColor, Math.min(0.65, opacity * 0.7))}`,
+                      }}
+                      title={`Fokussierter aktiver Tab · Deckkraft & Glow: ${Math.round(opacity * 100)}%`}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0"
+                        style={{
+                          backgroundColor: focusAccentColor,
+                          boxShadow: `0 0 5px ${focusAccentColor}`,
+                        }}
+                      />
+                      <span>{Math.round(opacity * 100)}%</span>
+                    </span>
+                  )}
 
                   {/* Close Tab Button */}
                   <button
                     onClick={(e) => handleCloseTab(tab.id, e)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-slate-500/20 text-slate-400 hover:text-slate-200 transition-opacity shrink-0"
+                    className="relative z-10 opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-slate-500/20 text-slate-400 hover:text-slate-200 transition-opacity shrink-0"
                     title="Tab schließen"
                   >
                     <X className="w-3 h-3" />
@@ -1129,8 +1222,11 @@ export const FirefoxTabSimulator: React.FC<FirefoxTabSimulatorProps> = ({
                   {/* Firefox Container Bottom Indicator */}
                   {tabColor && (
                     <div
-                      className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full"
-                      style={{ backgroundColor: tabColor }}
+                      className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full z-10"
+                      style={{
+                        backgroundColor: tabColor,
+                        boxShadow: isActive ? `0 0 6px ${tabColor}` : undefined,
+                      }}
                     />
                   )}
                 </div>

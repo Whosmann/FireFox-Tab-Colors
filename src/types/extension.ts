@@ -36,6 +36,12 @@ export type BaseThemeMode = 'system' | 'dark' | 'light' | 'custom';
 export type HybridWindowBehavior = 'static_window' | 'dynamic_toolbar';
 export type HybridTabIndicatorStyle = 'accent_line_and_fill' | 'line_only' | 'glow_border';
 
+export type UnmatchedActiveTabStyle =
+  | 'subtle_lift'      // Automatische Kontrast-Abhebung vom Rahmen + dezente Fokus-Linie (Empfohlen)
+  | 'default_accent'   // Standard-Akzentfarbe (defaultColor) mit Tab-Deckkraft
+  | 'custom_color'     // Eigene Highlight-Hintergrund- & Linienfarbe für aktive Tabs ohne Regel
+  | 'toolbar_only';    // Nur Toolbar-Farbe ohne zusätzliche Fokus-Linie
+
 export interface SavedTheme {
   id: string;
   name: string;
@@ -49,6 +55,10 @@ export interface SavedTheme {
   hybridWindowBehavior?: HybridWindowBehavior;
   hybridTabIndicatorStyle?: HybridTabIndicatorStyle;
   activeTabOpacity?: number;
+  unmatchedActiveTabStyle?: UnmatchedActiveTabStyle;
+  unmatchedActiveTabBg?: string;
+  unmatchedActiveTabLine?: string;
+  enableUnmatchedTabLine?: boolean;
   isCustom?: boolean;
 }
 
@@ -94,6 +104,10 @@ export interface ExtensionConfig {
   hybridWindowBehavior?: HybridWindowBehavior; // 'static_window' (Fenster bleibt fix, nur aktiver Tab akzentuiert) | 'dynamic_toolbar'
   hybridTabIndicatorStyle?: HybridTabIndicatorStyle; // 'accent_line_and_fill' | 'line_only' | 'glow_border'
   hybridIndicatorColor?: string; // Optionaler Farbindikator-Farbton (standardmäßig Regel-/Container-Farbe)
+  unmatchedActiveTabStyle?: UnmatchedActiveTabStyle; // Wie wird ein aktiver Tab OHNE Regel vom Theme/inaktiven Tabs abgehoben?
+  unmatchedActiveTabBg?: string; // Eigene Hintergrundfarbe für aktive Tabs ohne Regel
+  unmatchedActiveTabLine?: string; // Eigene obere Fokus-Linie (tab_line) für aktive Tabs ohne Regel
+  enableUnmatchedTabLine?: boolean; // Ob aktive Tabs ohne Regel eine obere Fokus-Linie erhalten
   savedThemes?: SavedTheme[]; // Gespeicherte benutzerdefinierte Theme-Profile
 }
 

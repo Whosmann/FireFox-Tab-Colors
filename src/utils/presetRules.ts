@@ -529,6 +529,22 @@ export const DUMMY_RULES: TabColorRule[] = [
 
 export const PRESET_PACKS: PresetPack[] = [
   {
+    id: 'workflow-all-in-one',
+    name: 'Komplett-Suite (Alle Workflows)',
+    description: 'Das ultimative Gesamtpaket: Alle 5 Workflow-Packs (DevOps, Social, Shopping, Work & Privacy) als vollständige Regelliste.',
+    icon: '⚡',
+    badge: 'Vollständiges Set',
+    category: 'workflow',
+    tags: ['Entwicklung', 'Social', 'Shopping', 'Work', 'Privacy'],
+    rules: [
+      ...DEVELOPMENT_RULES,
+      ...WORK_RULES,
+      ...SOCIAL_RULES,
+      ...SHOPPING_RULES,
+      ...PRIVACY_RULES,
+    ].map((r, i) => ({ ...r, id: `pack-all-${r.id}`, priority: i + 1 })),
+  },
+  {
     id: 'workflow-development',
     name: 'Development & DevOps',
     description: 'GitHub, GitLab, Localhost, Staging, Cloud Console & Dev Docs sauber in Entwicklungs-Containern getrennt.',

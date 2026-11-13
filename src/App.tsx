@@ -19,7 +19,7 @@ import { PRESET_PACKS, DUMMY_RULES } from './utils/presetRules';
 import { downloadExtensionZip, downloadExtensionXpi } from './utils/extensionGenerator';
 
 const INITIAL_RULES: TabColorRule[] = [
-  ...PRESET_PACKS[0].rules,
+  ...(PRESET_PACKS.find((p) => p.id === 'workflow-development')?.rules || PRESET_PACKS[0].rules),
 ];
 
 const INITIAL_CONFIG: ExtensionConfig = {
@@ -44,6 +44,8 @@ const INITIAL_CONFIG: ExtensionConfig = {
   hybridWindowBehavior: 'static_window', // Statisches Fenster + separater aktiver Tab-Farbindikator
   hybridTabIndicatorStyle: 'accent_line_and_fill', // Akzentlinie & sanfte Tönung
   hybridIndicatorColor: undefined,
+  unmatchedActiveTabStyle: 'subtle_lift', // Hebt aktive Tabs ohne Regel klar von inaktiven Tabs ab
+  enableUnmatchedTabLine: true,
   savedThemes: [],
 };
 
@@ -269,6 +271,10 @@ export default function App() {
               hybridWindowBehavior={config.hybridWindowBehavior ?? 'static_window'}
               hybridTabIndicatorStyle={config.hybridTabIndicatorStyle ?? 'accent_line_and_fill'}
               hybridIndicatorColor={config.hybridIndicatorColor}
+              unmatchedActiveTabStyle={config.unmatchedActiveTabStyle ?? 'subtle_lift'}
+              unmatchedActiveTabBg={config.unmatchedActiveTabBg}
+              unmatchedActiveTabLine={config.unmatchedActiveTabLine}
+              enableUnmatchedTabLine={config.enableUnmatchedTabLine !== false}
               defaultColor={config.defaultColor}
               defaultMode={config.defaultMode}
               onChangeOpacity={(op) => handleChangeConfig({ activeTabOpacity: op })}

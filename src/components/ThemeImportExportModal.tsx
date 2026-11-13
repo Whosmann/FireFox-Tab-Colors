@@ -20,8 +20,8 @@ import {
   Layers,
   CopyCheck
 } from 'lucide-react';
-import { ExtensionConfig, BaseThemeMode, FirefoxContainerColor, HybridWindowBehavior, HybridTabIndicatorStyle, SavedTheme } from '../types/extension';
-import { FIREFOX_CONTAINER_COLORS, hexToRgba } from '../utils/urlMatcher';
+import { ExtensionConfig, BaseThemeMode, FirefoxContainerColor, HybridWindowBehavior, HybridTabIndicatorStyle, UnmatchedActiveTabStyle, SavedTheme } from '../types/extension';
+import { FIREFOX_CONTAINER_COLORS, hexToRgba, getUnmatchedActiveTabAppearance } from '../utils/urlMatcher';
 
 export interface TabChromaThemePackage {
   format: 'tabchroma-theme';
@@ -40,6 +40,10 @@ export interface TabChromaThemePackage {
   hybridWindowBehavior?: HybridWindowBehavior;
   hybridTabIndicatorStyle?: HybridTabIndicatorStyle;
   hybridIndicatorColor?: string;
+  unmatchedActiveTabStyle?: UnmatchedActiveTabStyle;
+  unmatchedActiveTabBg?: string;
+  unmatchedActiveTabLine?: string;
+  enableUnmatchedTabLine?: boolean;
 }
 
 export const POPULAR_THEME_PRESETS = [
@@ -233,6 +237,10 @@ export const ThemeImportExportModal: React.FC<ThemeImportExportModalProps> = ({
     hybridWindowBehavior: config.hybridWindowBehavior || 'static_window',
     hybridTabIndicatorStyle: config.hybridTabIndicatorStyle || 'accent_line_and_fill',
     hybridIndicatorColor: config.hybridIndicatorColor,
+    unmatchedActiveTabStyle: config.unmatchedActiveTabStyle || 'subtle_lift',
+    unmatchedActiveTabBg: config.unmatchedActiveTabBg,
+    unmatchedActiveTabLine: config.unmatchedActiveTabLine,
+    enableUnmatchedTabLine: config.enableUnmatchedTabLine !== false,
   };
 
   const exportJsonString = JSON.stringify(currentThemePackage, null, 2);
@@ -470,6 +478,10 @@ export const ThemeImportExportModal: React.FC<ThemeImportExportModalProps> = ({
       let hybridWin: HybridWindowBehavior = config.hybridWindowBehavior || 'static_window';
       let hybridStyle: HybridTabIndicatorStyle = config.hybridTabIndicatorStyle || 'accent_line_and_fill';
       let hybridColor = config.hybridIndicatorColor;
+      let unmatchedStyle: UnmatchedActiveTabStyle = config.unmatchedActiveTabStyle || 'subtle_lift';
+      let unmatchedBg = config.unmatchedActiveTabBg;
+      let unmatchedLine = config.unmatchedActiveTabLine;
+      let enableUnmatchedLine = config.enableUnmatchedTabLine !== false;
 
       // 1. TabChroma Theme format
       if (data.format === 'tabchroma-theme' || data.customBaseFrameColor || data.customBaseToolbarColor) {
@@ -484,6 +496,10 @@ export const ThemeImportExportModal: React.FC<ThemeImportExportModalProps> = ({
         if (data.hybridWindowBehavior) hybridWin = data.hybridWindowBehavior;
         if (data.hybridTabIndicatorStyle) hybridStyle = data.hybridTabIndicatorStyle;
         if (data.hybridIndicatorColor) hybridColor = data.hybridIndicatorColor;
+        if (data.unmatchedActiveTabStyle) unmatchedStyle = data.unmatchedActiveTabStyle;
+        if (data.unmatchedActiveTabBg) unmatchedBg = data.unmatchedActiveTabBg;
+        if (data.unmatchedActiveTabLine) unmatchedLine = data.unmatchedActiveTabLine;
+        if (typeof data.enableUnmatchedTabLine === 'boolean') enableUnmatchedLine = data.enableUnmatchedTabLine;
         name = data.themeName || data.name || 'TabChroma Theme';
         source = 'TabChroma Theme Package';
       }
@@ -538,6 +554,10 @@ export const ThemeImportExportModal: React.FC<ThemeImportExportModalProps> = ({
         hybridWindowBehavior: hybridWin,
         hybridTabIndicatorStyle: hybridStyle,
         hybridIndicatorColor: hybridColor,
+        unmatchedActiveTabStyle: unmatchedStyle,
+        unmatchedActiveTabBg: unmatchedBg,
+        unmatchedActiveTabLine: unmatchedLine,
+        enableUnmatchedTabLine: enableUnmatchedLine,
       });
 
       setParsedMeta({ name, source });
@@ -1042,39 +1062,72 @@ export const ThemeImportExportModal: React.FC<ThemeImportExportModalProps> = ({
                       </p>
                     </div>
 
-                    {/* Mini simulated browser preview */}
-                    <div
-                      className="rounded-lg p-2 text-xs shadow-inner"
-                      style={{ backgroundColor: preset.frame }}
-                    >
-                      <div className="flex items-center gap-1.5 mb-1">
+                    {/* Mini simulated browser preview (showing Aktiv ohne Regel, Aktiv mit Regel, Inaktiv) */}
+                    {(() => {
+                      const presetUnmatched = getUnmatchedActiveTabAppearance({
+                        frameHex: preset.frame,
+                        toolbarHex: preset.toolbar,
+                        textHex: preset.text,
+                        defaultColor: preset.defaultColor,
+                        unmatchedActiveTabStyle: preset.unmatchedActiveTabStyle || config.unmatchedActiveTabStyle || 'subtle_lift',
+                        unmatchedActiveTabBg: preset.unmatchedActiveTabBg || config.unmatchedActiveTabBg,
+                        unmatchedActiveTabLine: preset.unmatchedActiveTabLine || config.unmatchedActiveTabLine,
+                        enableUnmatchedTabLine: preset.enableUnmatchedTabLine ?? (config.enableUnmatchedTabLine !== false),
+                        activeTabOpacity: preset.activeTabOpacity ?? 0.35,
+                      });
+                      return (
                         <div
-                          className="px-2 py-0.5 rounded-t text-[10px] font-bold border-t-2"
-                          style={{
-                            backgroundColor: preset.toolbar,
-                            color: preset.text,
-                            borderTopColor: preset.defaultColor,
-                          }}
+                          className="rounded-lg p-2 text-xs shadow-inner space-y-1"
+                          style={{ backgroundColor: preset.frame }}
                         >
-                          🦊 Tab
+                          <div className="flex items-center gap-1">
+                            {/* Active Tab WITHOUT rule */}
+                            <div
+                              className="px-1.5 py-0.5 rounded-t text-[9px] font-bold truncate"
+                              style={{
+                                backgroundColor: presetUnmatched.tabBgCss,
+                                color: preset.text,
+                                borderTop: `2px solid ${presetUnmatched.tabLineCss}`,
+                              }}
+                              title={`Aktiv-Tab ohne Regel (Kontrast gegen Inaktiv: ${presetUnmatched.frameContrastRatio}:1)`}
+                            >
+                              🔍 Ohne Regel
+                            </div>
+                            {/* Active Tab WITH rule */}
+                            <div
+                              className="px-1.5 py-0.5 rounded-t text-[9px] font-bold truncate"
+                              style={{
+                                backgroundColor: preset.toolbar,
+                                color: preset.text,
+                                borderTop: `2px solid ${preset.defaultColor}`,
+                              }}
+                              title="Aktiv-Tab mit URL-Regel"
+                            >
+                              🦊 Regel
+                            </div>
+                            {/* Inactive Tab */}
+                            <div
+                              className="text-[9px] opacity-60 px-1 truncate"
+                              style={{ color: preset.text }}
+                            >
+                              Inaktiv
+                            </div>
+                          </div>
+                          <div
+                            className="rounded px-2 py-0.5 text-[10px] font-mono flex items-center justify-between gap-1"
+                            style={{
+                              backgroundColor: preset.toolbar,
+                              color: preset.text,
+                            }}
+                          >
+                            <span className="truncate">https://firma.internal</span>
+                            <span className="text-[9px] opacity-80 shrink-0" title="Abhebung Aktiv-Tab (ohne Regel) vs. Inaktiv">
+                              {presetUnmatched.distinctionLevel === 'clear' ? '✓' : presetUnmatched.distinctionLevel === 'moderate' ? '◐' : '⚠'} {presetUnmatched.frameContrastRatio}:1
+                            </span>
+                          </div>
                         </div>
-                        <div
-                          className="text-[10px] opacity-60"
-                          style={{ color: preset.text }}
-                        >
-                          Inaktiv
-                        </div>
-                      </div>
-                      <div
-                        className="rounded px-2 py-0.5 text-[10px] font-mono truncate"
-                        style={{
-                          backgroundColor: preset.toolbar,
-                          color: preset.text,
-                        }}
-                      >
-                        https://firma.internal
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     {/* Action Buttons Row */}
                     <div className="space-y-1.5 pt-1">

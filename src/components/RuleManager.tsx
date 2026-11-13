@@ -12,6 +12,7 @@ import {
   Download, 
   Upload, 
   Sparkles,
+  Zap,
   Search,
   Check,
   RotateCcw,
@@ -81,6 +82,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
   const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [showOnlySelected, setShowOnlySelected] = useState(false);
   const [isPresetPacksModalOpen, setIsPresetPacksModalOpen] = useState(false);
+  const [presetSetToOverwrite, setPresetSetToOverwrite] = useState<PresetPack | null>(null);
   const [selectedPresetPackId, setSelectedPresetPackId] = useState<string>(PRESET_PACKS[0]?.id || 'workflow-development');
   const [selectedPresetRuleIds, setSelectedPresetRuleIds] = useState<Set<string>>(() => {
     const firstPack = PRESET_PACKS[0];
@@ -148,7 +150,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
     setIsConfirmingBulkDelete(false);
     setIsColorSyncOpen(false);
     setIsIconSyncOpen(false);
-    if (allFilteredAreSelected) {
+    if (allFilteredAreSelected || isIndeterminate) {
       // Deselect only the currently visible rules
       setSelectedRuleIds((prev) => {
         const next = new Set(prev);
@@ -611,6 +613,66 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
     }
   };
 
+  const handleRequestOverwriteWithPreset = (pack: PresetPack) => {
+    if (rules.length === 0) {
+      handleExecuteOverwritePreset(pack);
+    } else {
+      setPresetSetToOverwrite(pack);
+    }
+  };
+
+  const handleExecuteOverwritePreset = (pack: PresetPack) => {
+    const updated = pack.rules.map((r, idx) => ({
+      ...r,
+      id: `rule-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+      priority: idx + 1,
+    }));
+    onUpdateRules(updated);
+    setSelectedRuleIds(new Set());
+    setIsConfirmingBulkDelete(false);
+    setIsPresetPacksModalOpen(false);
+    setPresetSetToOverwrite(null);
+    setNotification({
+      type: 'success',
+      text: `✓ Komplettes Preset-Set "${pack.name}" (${updated.length} Regeln) geladen. Die vorherige Regelliste wurde komplett überschrieben.`,
+    });
+  };
+
+  const handleExecuteAppendPreset = (pack: PresetPack) => {
+    const existingKeys = new Set(rules.map((r) => `${r.patternType}::${r.pattern.trim().toLowerCase()}`));
+    let addedCount = 0;
+    const toAdd: TabColorRule[] = [];
+
+    pack.rules.forEach((r, idx) => {
+      const key = `${r.patternType}::${r.pattern.trim().toLowerCase()}`;
+      if (!existingKeys.has(key)) {
+        toAdd.push({
+          ...r,
+          id: `rule-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+          priority: rules.length + toAdd.length + 1,
+        });
+        existingKeys.add(key);
+        addedCount++;
+      }
+    });
+
+    if (addedCount === 0) {
+      setNotification({
+        type: 'info',
+        text: `Alle ${pack.rules.length} Regeln aus "${pack.name}" sind bereits in deiner Liste vorhanden.`,
+      });
+    } else {
+      const merged = [...rules, ...toAdd];
+      onUpdateRules(merged);
+      setIsPresetPacksModalOpen(false);
+      setPresetSetToOverwrite(null);
+      setNotification({
+        type: 'success',
+        text: `✓ ${addedCount} Regeln aus "${pack.name}" an deine Liste angehängt (${pack.rules.length - addedCount} bereits vorhandene übersprungen).`,
+      });
+    }
+  };
+
   const handleLoadPreset = (packId: string) => {
     const pack = PRESET_PACKS.find((p) => p.id === packId);
     if (!pack) return;
@@ -983,46 +1045,103 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
         </div>
 
         {/* Workflow Preset Packs Quick Selector */}
-        <div className="p-3 rounded-xl bg-gradient-to-r from-purple-50/90 via-purple-50/50 to-sky-50/80 border border-purple-200 text-xs shadow-2xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
-            <div className="flex items-center gap-2">
+        <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-50 via-purple-50/60 to-sky-50/70 border border-purple-200 text-xs shadow-2xs space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="w-6 h-6 rounded-lg bg-purple-600 text-white flex items-center justify-center shadow-xs">
                 <Sparkles className="w-3.5 h-3.5" />
               </div>
               <span className="font-bold text-slate-900 text-xs sm:text-sm">
                 Workflow Preset-Packs
               </span>
-              <span className="text-[11px] text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-full font-medium hidden md:inline">
-                Regeln einzeln oder im Pack laden
+              <span className="text-[11px] text-purple-700 bg-purple-100/90 border border-purple-200/80 px-2 py-0.5 rounded-full font-semibold">
+                ⚡ Ganze Sets importieren (Liste überschreiben)
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsPresetPacksModalOpen(true)}
-              className="text-xs text-purple-700 hover:text-purple-900 font-bold hover:underline cursor-pointer flex items-center gap-1 ml-auto sm:ml-0"
-            >
-              <span>Alle Packs &amp; einzelne Regeln durchsuchen</span>
-              <span>→</span>
-            </button>
+
+            <div className="flex items-center gap-2 flex-wrap ml-auto sm:ml-0">
+              {/* Quick direct overwrite dropdown */}
+              <div className="flex items-center gap-1.5 bg-white border border-purple-300/80 rounded-lg px-2 py-1 shadow-2xs hover:border-purple-400 transition-colors">
+                <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const pack = PRESET_PACKS.find((p) => p.id === e.target.value);
+                    if (pack) {
+                      handleRequestOverwriteWithPreset(pack);
+                    }
+                  }}
+                  className="text-xs font-bold text-purple-900 bg-transparent outline-none cursor-pointer pr-1"
+                  title="Wähle ein vorkonfiguriertes Workflow-Preset, um deine aktuelle Regelliste komplett zu ersetzen"
+                >
+                  <option value="">⚡ Set wählen &amp; Liste überschreiben...</option>
+                  {PRESET_PACKS.map((pack) => (
+                    <option key={pack.id} value={pack.id}>
+                      {pack.icon} {pack.name} ({pack.rules.length} Regeln)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsPresetPacksModalOpen(true)}
+                className="text-xs text-purple-700 hover:text-purple-900 font-bold hover:underline cursor-pointer flex items-center gap-1 whitespace-nowrap"
+              >
+                <span>🔍 Alle Packs &amp; Regeln ansehen</span>
+                <span>→</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 w-full">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2 w-full">
             {PRESET_PACKS.map((pack) => (
-              <button
+              <div
                 key={pack.id}
-                type="button"
-                onClick={() => handleLoadPreset(pack.id)}
-                className="flex items-center justify-between p-2 px-3 rounded-lg bg-white hover:bg-purple-100/60 text-slate-800 border border-purple-200/80 hover:border-purple-300 font-semibold text-xs shadow-2xs transition-all cursor-pointer group text-left"
-                title={`${pack.name} (${pack.rules.length} Regeln) – Klick für Einzel-Auswahl & Import`}
+                className="flex flex-col justify-between p-2.5 rounded-xl bg-white hover:bg-purple-50/40 text-slate-800 border border-purple-200/90 hover:border-purple-300 font-semibold text-xs shadow-2xs transition-all group"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-base shrink-0">{pack.icon}</span>
-                  <span className="truncate group-hover:text-purple-700 font-medium">{pack.name.split(' ')[0]}</span>
+                <div 
+                  onClick={() => handleLoadPreset(pack.id)}
+                  className="cursor-pointer mb-2"
+                  title={`${pack.name} (${pack.rules.length} Regeln) – Klick für Details & selektive Regelauswahl`}
+                >
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-lg shrink-0">{pack.icon}</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-700 font-bold">
+                      {pack.rules.length}
+                    </span>
+                  </div>
+                  <div className="truncate group-hover:text-purple-700 font-bold text-xs" title={pack.name}>
+                    {pack.name}
+                  </div>
+                  <div className="text-[10px] text-slate-500 line-clamp-1 font-normal mt-0.5">
+                    {pack.badge}
+                  </div>
                 </div>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold shrink-0 ml-1">
-                  {pack.rules.length}
-                </span>
-              </button>
+
+                {/* Direct Action Buttons: Overwrite Entire Set or View Rules */}
+                <div className="pt-2 border-t border-slate-100 flex items-center gap-1 w-full">
+                  <button
+                    type="button"
+                    onClick={() => handleRequestOverwriteWithPreset(pack)}
+                    className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] shadow-2xs transition-colors cursor-pointer"
+                    title={`Ersetzt deine gesamte Regelliste (${rules.length} Regeln) durch alle ${pack.rules.length} Regeln aus "${pack.name}"`}
+                  >
+                    <Zap className="w-3 h-3 text-amber-300 shrink-0" />
+                    <span className="truncate">Set laden</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLoadPreset(pack.id)}
+                    className="p-1 rounded-lg border border-slate-200 hover:border-purple-300 bg-slate-50 hover:bg-purple-50 text-slate-600 hover:text-purple-700 text-[11px] transition-colors cursor-pointer shrink-0"
+                    title="Regeln ansehen und selektiv auswählen"
+                  >
+                    <Search className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -1429,7 +1548,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                   <label
                     className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer select-none"
                     title={
-                      allFilteredAreSelected
+                      allFilteredAreSelected || isIndeterminate
                         ? 'Alle sichtbaren Regeln abwählen'
                         : 'Alle sichtbaren Regeln auswählen'
                     }
@@ -1936,14 +2055,17 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                     <>
                       {/* Pack Header info (shrink-0) */}
                       <div className="shrink-0 space-y-2 pb-3 border-b border-slate-200">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-3xl">{activePack.icon}</span>
-                            <div>
-                              <h4 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="text-3xl shrink-0">{activePack.icon}</span>
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2 flex-wrap">
                                 <span>{activePack.name}</span>
                                 <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-bold">
                                   {activePack.rules.length} Regeln
+                                </span>
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                  {activePack.badge}
                                 </span>
                               </h4>
                               <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">
@@ -1951,6 +2073,16 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                               </p>
                             </div>
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRequestOverwriteWithPreset(activePack)}
+                            className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+                            title={`Ersetzt deine gesamte aktuelle Regelliste (${rules.length} Regeln) vollständig durch alle ${activePack.rules.length} Regeln aus "${activePack.name}"`}
+                          >
+                            <Zap className="w-4 h-4 text-amber-300" />
+                            <span>⚡ Komplettes Set importieren (Überschreiben)</span>
+                          </button>
                         </div>
 
                         {/* Contained Domains Tags */}
@@ -2144,51 +2276,66 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                       </div>
 
                       {/* Action options (shrink-0 at bottom) */}
-                      <div className="pt-3 border-t border-slate-200 shrink-0 space-y-2">
-                        <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
-                          <span>
-                            Ausgewählte Regeln ({selectedInActivePackCount}) auf deine Regelliste anwenden:
-                          </span>
-                          <span className="text-slate-400 text-[11px] hidden sm:inline">
-                            Tipp: Über <strong>"+ Einzeln laden"</strong> an jeder Regel kannst du auch gezielt nur 1 Regel übernehmen.
-                          </span>
+                      <div className="pt-3 border-t border-slate-200 shrink-0 space-y-3">
+                        {/* 1. Haupt-Aktion: Komplettes Preset-Set importieren (Liste überschreiben) */}
+                        <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-100/90 via-purple-50/70 to-sky-50/80 border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                          <div>
+                            <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                              <Zap className="w-4 h-4 text-purple-600" />
+                              <span>Komplettes Preset-Set importieren (Liste überschreiben)</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 mt-0.5">
+                              Ersetzt deine gesamte Regelliste ({rules.length} Regeln) durch alle <strong>{activePack.rules.length} Regeln</strong> aus "{activePack.name}".
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRequestOverwriteWithPreset(activePack)}
+                            className="shrink-0 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer whitespace-nowrap"
+                            title={`Ersetzt alle bisherigen ${rules.length} Regeln vollständig durch alle ${activePack.rules.length} Regeln aus "${activePack.name}"`}
+                          >
+                            <Zap className="w-4 h-4 text-amber-300" />
+                            <span>⚡ Komplettes Set laden ({activePack.rules.length} Regeln)</span>
+                          </button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            disabled={selectedInActivePackCount === 0}
-                            onClick={() => handleApplyPresetPack(activePack, 'append', true)}
-                            className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
-                            title="Fügt nur die mit Häkchen ausgewählten Regeln zu deiner Liste hinzu"
-                          >
-                            <Plus className="w-4 h-4" />
-                            <span>
-                              + Ausgewählte Regeln hinzufügen ({selectedInActivePackCount})
-                            </span>
-                          </button>
+                        {/* 2. Selektive Aktion: Nur ausgewählte Regeln hinzufügen oder ersetzen */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                          <span className="text-slate-600 font-medium">
+                            Selektive Auswahl: {selectedInActivePackCount} von {activePack.rules.length} Regeln gewählt
+                          </span>
 
-                          <button
-                            type="button"
-                            disabled={selectedInActivePackCount === 0}
-                            onClick={() => {
-                              if (
-                                rules.length === 0 ||
-                                window.confirm(
-                                  `Möchtest du alle bisherigen ${rules.length} Regeln wirklich durch die ${selectedInActivePackCount} ausgewählten Regeln aus "${activePack.name}" ersetzen?`
-                                )
-                              ) {
-                                handleApplyPresetPack(activePack, 'replace', true);
-                              }
-                            }}
-                            className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-800 border border-slate-300 font-semibold text-xs shadow-2xs transition-colors cursor-pointer"
-                            title="Ersetzt alle bestehenden Regeln durch die ausgewählten Regeln"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                            <span>
-                              Ausgewählte Regeln ersetzen ({selectedInActivePackCount})
-                            </span>
-                          </button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              disabled={selectedInActivePackCount === 0}
+                              onClick={() => handleApplyPresetPack(activePack, 'append', true)}
+                              className="flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 border border-slate-300 font-semibold text-xs shadow-2xs transition-colors cursor-pointer"
+                              title="Fügt nur die markierten Regeln zu deiner bestehenden Liste hinzu"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>+ Ausgewählte anhängen ({selectedInActivePackCount})</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={selectedInActivePackCount === 0}
+                              onClick={() => {
+                                const chosen = activePack.rules.filter((r) => selectedPresetRuleIds.has(r.id));
+                                setPresetSetToOverwrite({
+                                  ...activePack,
+                                  name: `${activePack.name} (Auswahl: ${chosen.length} Regeln)`,
+                                  rules: chosen,
+                                });
+                              }}
+                              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 border border-slate-300 font-semibold text-xs shadow-2xs transition-colors cursor-pointer"
+                              title="Ersetzt bestehende Regeln nur durch die markierten Regeln"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Ausgewählte ersetzen ({selectedInActivePackCount})</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </>
@@ -2200,7 +2347,7 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
             {/* Modal Footer */}
             <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 shrink-0">
               <span className="hidden sm:inline">
-                Tipp: Mit <strong>"+ Einzeln laden"</strong> oder <strong>"+ Ausgewählte Regeln hinzufügen"</strong> bleiben all deine selbst erstellten Regeln erhalten.
+                Tipp: Mit <strong>"+ Einzeln laden"</strong> an jeder Regel kannst du gezielt einzelne Regeln ohne Überschreiben übernehmen.
               </span>
               <button
                 type="button"
@@ -2208,6 +2355,129 @@ export const RuleManager: React.FC<RuleManagerProps> = ({
                 className="px-4 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs ml-auto cursor-pointer"
               >
                 Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Bestätigung für das Überschreiben der Regelliste durch ein komplettes Preset-Set */}
+      {presetSetToOverwrite && (
+        <div className="fixed inset-0 z-60 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden animate-scale-up flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-sky-500/10 flex items-start justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center text-xl shadow-md shrink-0">
+                  {presetSetToOverwrite.icon}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span>Komplettes Preset-Set importieren</span>
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Paket: <strong className="text-purple-700">{presetSetToOverwrite.name}</strong> ({presetSetToOverwrite.rules.length} Regeln)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPresetSetToOverwrite(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Abbrechen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Warnhinweis */}
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-amber-800 text-xs sm:text-sm">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>Bestehende Regelliste wird überschrieben</span>
+                </div>
+                <p className="text-xs text-amber-800/90 leading-relaxed">
+                  Deine aktuellen <strong>{rules.length} {rules.length === 1 ? 'Regel' : 'Regeln'}</strong> werden komplett durch die <strong>{presetSetToOverwrite.rules.length} Regeln</strong> aus dem Preset <strong>"{presetSetToOverwrite.name}"</strong> ersetzt.
+                </p>
+              </div>
+
+              {/* Sicherheits-Backup */}
+              {rules.length > 0 && (
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Download className="w-4 h-4 text-slate-500 shrink-0" />
+                    <span className="text-[11px] text-slate-600 truncate">
+                      Sicherheitshalber vorher ein Backup deiner bisherigen {rules.length} Regeln speichern?
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleExportJson(false)}
+                    className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs shadow-2xs whitespace-nowrap cursor-pointer shrink-0 transition-colors"
+                    title="Exportiert die aktuellen Regeln als JSON-Datei"
+                  >
+                    💾 Backup sichern
+                  </button>
+                </div>
+              )}
+
+              {/* Preview der Regeln im Set */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  <span>Enthaltene Regeln im Preset ({presetSetToOverwrite.rules.length}):</span>
+                  <span className="text-purple-600 font-mono font-medium">{presetSetToOverwrite.badge}</span>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100 bg-slate-50/50">
+                  {presetSetToOverwrite.rules.map((rule, idx) => (
+                    <div key={idx} className="p-2.5 flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-black/15 shadow-2xs shrink-0"
+                          style={{ backgroundColor: rule.color }}
+                        />
+                        <span className="font-semibold text-slate-800 truncate">{rule.name}</span>
+                        <span className="text-[10px] font-mono text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200 shrink-0">
+                          {rule.pattern}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-medium text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                        {rule.containerName}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setPresetSetToOverwrite(null)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Abbrechen
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExecuteAppendPreset(presetSetToOverwrite)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs transition-colors cursor-pointer"
+                title="Behält deine bisherigen Regeln und hängt die Preset-Regeln einfach hinten an"
+              >
+                + Stattdessen anhängen (Alte behalten)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExecuteOverwritePreset(presetSetToOverwrite)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                title="Ersetzt alle bestehenden Regeln durch dieses Preset-Set"
+              >
+                <Zap className="w-4 h-4 text-amber-300" />
+                <span>⚡ Ja, Liste überschreiben ({presetSetToOverwrite.rules.length} Regeln)</span>
               </button>
             </div>
           </div>

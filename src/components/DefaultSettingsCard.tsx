@@ -16,10 +16,25 @@ import {
   Share2,
   Download,
   Upload,
-  Copy
+  Copy,
+  Eye,
+  Wand2,
+  ArrowRightLeft,
+  CheckCircle2,
+  AlertTriangle,
+  Zap
 } from 'lucide-react';
-import { ExtensionConfig, FirefoxContainerColor, ColorMode, BaseThemeMode, HybridWindowBehavior, HybridTabIndicatorStyle } from '../types/extension';
-import { FIREFOX_CONTAINER_COLORS, hexToRgba } from '../utils/urlMatcher';
+import { ExtensionConfig, FirefoxContainerColor, ColorMode, BaseThemeMode, HybridWindowBehavior, HybridTabIndicatorStyle, UnmatchedActiveTabStyle } from '../types/extension';
+import { 
+  FIREFOX_CONTAINER_COLORS, 
+  hexToRgba, 
+  getContrastRatio, 
+  getWcagRating, 
+  getOptimalTextColor, 
+  getUnmatchedActiveTabAppearance,
+  shiftHexForTabLift,
+  blendHexColors
+} from '../utils/urlMatcher';
 import { ChromaTestLogo, LogoVariant } from './ChromaTestLogo';
 import { ThemeImportExportModal, POPULAR_THEME_PRESETS } from './ThemeImportExportModal';
 
@@ -39,6 +54,102 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [themeModalTab, setThemeModalTab] = useState<'export' | 'import' | 'presets'>('export');
   const [copiedQuickCode, setCopiedQuickCode] = useState(false);
+  const [copiedPaletteCodes, setCopiedPaletteCodes] = useState(false);
+  const [copiedSingleColor, setCopiedSingleColor] = useState<string | null>(null);
+  const [paletteViewStyle, setPaletteViewStyle] = useState<'browser' | 'swatches'>('browser');
+  const [previewActiveTabType, setPreviewActiveTabType] = useState<'unmatched' | 'matched'>('unmatched');
+
+  const customFrame = config.customBaseFrameColor || '#1c1b22';
+  const customToolbar = config.customBaseToolbarColor || '#2b2a33';
+  const customText = config.customBaseTextColor || '#fbfbfe';
+  const defaultAccent = config.defaultColor || '#37adff';
+
+  // Effective colors for the currently selected baseThemeMode ('system' | 'dark' | 'light' | 'custom')
+  const effectiveFrame = config.baseThemeMode === 'custom'
+    ? customFrame
+    : config.baseThemeMode === 'light'
+    ? '#f0f0f4'
+    : '#1c1b22';
+  const effectiveToolbar = config.baseThemeMode === 'custom'
+    ? customToolbar
+    : config.baseThemeMode === 'light'
+    ? '#ffffff'
+    : '#2b2a33';
+  const effectiveText = config.baseThemeMode === 'custom'
+    ? customText
+    : config.baseThemeMode === 'light'
+    ? '#15141a'
+    : '#fbfbfe';
+
+  const toolbarContrast = getWcagRating(customText, customToolbar);
+  const frameContrast = getWcagRating(customText, customFrame);
+
+  // Evaluate Active Tab WITHOUT rule against the active theme
+  const unmatchedEval = getUnmatchedActiveTabAppearance({
+    frameHex: effectiveFrame,
+    toolbarHex: effectiveToolbar,
+    textHex: effectiveText,
+    defaultColor: defaultAccent,
+    activeTabOpacity: config.activeTabOpacity ?? 0.35,
+    unmatchedActiveTabStyle: config.unmatchedActiveTabStyle || 'subtle_lift',
+    unmatchedActiveTabBg: config.unmatchedActiveTabBg,
+    unmatchedActiveTabLine: config.unmatchedActiveTabLine,
+    enableUnmatchedTabLine: config.enableUnmatchedTabLine !== false,
+  });
+
+  const handleAutoOptimizeUnmatchedTab = () => {
+    const liftedBg = shiftHexForTabLift(effectiveFrame, effectiveToolbar);
+    const liftedLine = blendHexColors(effectiveText, defaultAccent, 0.45);
+    onChangeConfig({
+      unmatchedActiveTabStyle: 'custom_color',
+      unmatchedActiveTabBg: liftedBg,
+      unmatchedActiveTabLine: liftedLine,
+      enableUnmatchedTabLine: true,
+    });
+  };
+
+  const handleCopySingleColor = (colorHex: string, label: string) => {
+    try {
+      navigator.clipboard?.writeText(colorHex);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = colorHex;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopiedSingleColor(label);
+    setTimeout(() => setCopiedSingleColor(null), 2000);
+  };
+
+  const handleCopyAllPalette = () => {
+    const text = `Rahmen: ${customFrame} | Symbolleiste: ${customToolbar} | Schrift: ${customText} | Aktiv-Tab (ohne Regel): ${unmatchedEval.tabBgHex}`;
+    try {
+      navigator.clipboard?.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopiedPaletteCodes(true);
+    setTimeout(() => setCopiedPaletteCodes(false), 2200);
+  };
+
+  const handleSwapFrameToolbar = () => {
+    onChangeConfig({
+      customBaseFrameColor: customToolbar,
+      customBaseToolbarColor: customFrame,
+    });
+  };
+
+  const handleAutoOptimizeTextColor = () => {
+    const optimal = getOptimalTextColor(customToolbar);
+    onChangeConfig({ customBaseTextColor: optimal });
+  };
 
   const handleQuickCopyTheme = async () => {
     const themePkg = {
@@ -53,6 +164,10 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
       defaultColor: config.defaultColor || '#37adff',
       activeTabOpacity: config.activeTabOpacity ?? 0.35,
       enableFaviconContrastHalo: config.enableFaviconContrastHalo !== false,
+      unmatchedActiveTabStyle: config.unmatchedActiveTabStyle || 'subtle_lift',
+      unmatchedActiveTabBg: config.unmatchedActiveTabBg,
+      unmatchedActiveTabLine: config.unmatchedActiveTabLine,
+      enableUnmatchedTabLine: config.enableUnmatchedTabLine !== false,
     };
     try {
       await navigator.clipboard.writeText(JSON.stringify(themePkg, null, 2));
@@ -558,6 +673,45 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
           </button>
         </div>
 
+        {/* Schnelle Paletten-Vorschau wenn nicht im benutzerdefinierten Modus */}
+        {config.baseThemeMode !== 'custom' && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span 
+                  className="w-4 h-4 rounded-full border border-black/20 shadow-2xs" 
+                  style={{ backgroundColor: customFrame }} 
+                  title={`Gespeicherter Rahmen: ${customFrame}`}
+                />
+                <span 
+                  className="w-4 h-4 rounded-full border border-black/20 shadow-2xs" 
+                  style={{ backgroundColor: customToolbar }} 
+                  title={`Gespeicherte Toolbar: ${customToolbar}`}
+                />
+                <span 
+                  className="w-4 h-4 rounded-full border border-black/20 shadow-2xs" 
+                  style={{ backgroundColor: customText }} 
+                  title={`Gespeicherter Text: ${customText}`}
+                />
+              </div>
+              <div>
+                <span className="font-semibold text-slate-800">Gespeicherte individuelle Farbpalette:</span>{' '}
+                <span className="font-mono text-[11px] text-slate-500">
+                  Rahmen {customFrame} · Toolbar {customToolbar} · Text {customText}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onChangeConfig({ baseThemeMode: 'custom' })}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors shrink-0 self-start sm:self-center"
+            >
+              <Paintbrush className="w-3.5 h-3.5 text-purple-600" />
+              <span>Individuelle Palette bearbeiten &amp; anwenden</span>
+            </button>
+          </div>
+        )}
+
         {/* Individuelle Farbkonfiguration - Geräumig & ohne Überschneidungen! */}
         {config.baseThemeMode === 'custom' && (
           <div className="p-4 bg-white rounded-xl border border-purple-200/90 shadow-2xs space-y-4">
@@ -865,67 +1019,511 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
               </div>
             </div>
 
-            {/* Live-Vorschau der konfigurierten Basisfarben */}
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-1.5">
-              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
-                <span>Live-Vorschau Ihres individuellen Firefox-Layouts:</span>
-                <span className="text-[10px] font-mono text-slate-500">
-                  Rahmen: {config.customBaseFrameColor || '#1c1b22'} | Toolbar: {config.customBaseToolbarColor || '#2b2a33'} | Text: {config.customBaseTextColor || '#fbfbfe'}
-                </span>
-              </div>
-              <div
-                className="rounded-lg p-2.5 text-xs shadow-inner transition-colors"
-                style={{ backgroundColor: config.customBaseFrameColor || '#1c1b22' }}
-              >
-                {/* Tabs bar */}
-                <div className="flex items-center gap-2 mb-1.5">
-                  <div
-                    className="px-3 py-1 rounded-t-md text-xs font-semibold flex items-center gap-1.5 border-t-2"
-                    style={{
-                      backgroundColor: config.customBaseToolbarColor || '#2b2a33',
-                      color: config.customBaseTextColor || '#fbfbfe',
-                      borderTopColor: config.defaultColor || '#37adff',
-                    }}
-                  >
-                    <span>🦊</span>
-                    <span>Aktiver Tab (Vorschau)</span>
+            {/* Live-Farbpaletten-Vorschau: Zeigt customBaseFrameColor, customBaseToolbarColor & customBaseTextColor */}
+            <div className="p-4 rounded-xl border border-purple-200 bg-gradient-to-b from-slate-50/80 to-white space-y-3.5 shadow-2xs">
+              {/* Header mit Titel, Beschreibung & Schnell-Werkzeugen */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-200/80 pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Palette className="w-4 h-4 text-purple-600" />
+                    <span className="text-xs font-bold text-slate-900">
+                      Live-Farbpaletten-Vorschau (Echtes Erscheinungsbild)
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Live synchron
+                    </span>
                   </div>
-                  <div
-                    className="px-2.5 py-1 text-xs opacity-60 flex items-center gap-1.5"
-                    style={{ color: config.customBaseTextColor || '#fbfbfe' }}
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Zeigt die ausgewählten Farben für Rahmen, Symbolleiste und Schrift in Echtzeit vor dem Speichern oder Anwenden.
+                  </p>
+                </div>
+
+                {/* Schnell-Aktionen für die Palette */}
+                <div className="flex items-center gap-1.5 flex-wrap self-start sm:self-center">
+                  <button
+                    type="button"
+                    onClick={handleSwapFrameToolbar}
+                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-md transition-colors shadow-2xs"
+                    title="Tauscht Rahmen- und Toolbar-Farbe für invertierten Tiefeneffekt"
                   >
-                    <span>🌐</span>
-                    <span>Inaktiver Tab</span>
+                    <ArrowRightLeft className="w-3 h-3 text-slate-500" />
+                    <span>Rahmen ↔ Toolbar tauschen</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleAutoOptimizeTextColor}
+                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-md transition-colors shadow-2xs"
+                    title="Wählt automatisch die kontrastreichste Schriftfarbe (#fbfbfe oder #15141a) passend zur Symbolleiste"
+                  >
+                    <Wand2 className="w-3 h-3 text-purple-600" />
+                    <span>Auto-Kontrast</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyAllPalette}
+                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-md transition-colors shadow-2xs"
+                    title="Kopiert alle drei Farb-Hex-Codes"
+                  >
+                    {copiedPaletteCodes ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span className="text-emerald-700 font-bold">Kopiert!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-slate-500" />
+                        <span>Palette kopieren</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* 3 Farbpaletten-Karten nebeneinander */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* 1. Rahmen (Frame) Card */}
+                <div className="flex items-center gap-3 p-2.5 rounded-lg border border-slate-200 bg-white shadow-2xs">
+                  <div 
+                    className="w-9 h-9 rounded-lg border border-black/15 shadow-inner shrink-0 flex items-center justify-center font-mono text-[10px] font-bold text-white/90"
+                    style={{ backgroundColor: customFrame }}
+                  >
+                    <span className="drop-shadow-sm">1</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Rahmen (Frame)
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-xs font-bold text-slate-800 truncate">
+                        {customFrame}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySingleColor(customFrame, 'frame')}
+                        className="p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                        title="Hex-Code kopieren"
+                      >
+                        {copiedSingleColor === 'frame' ? (
+                          <Check className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      Fenster-Hintergrund &amp; inaktive Tabs
+                    </div>
                   </div>
                 </div>
 
-                {/* Toolbar bar */}
-                <div
-                  className="rounded-md p-1.5 flex items-center gap-2 text-xs"
-                  style={{
-                    backgroundColor: config.customBaseToolbarColor || '#2b2a33',
-                    color: config.customBaseTextColor || '#fbfbfe',
-                  }}
-                >
-                  <span className="opacity-75 text-xs">‹ › ↻</span>
-                  <div
-                    className="flex-1 px-2.5 py-0.5 rounded text-[11px] font-mono border"
-                    style={{
-                      backgroundColor: `${config.customBaseFrameColor || '#1c1b22'}88`,
-                      borderColor: `${config.customBaseTextColor || '#fbfbfe'}22`,
-                      color: config.customBaseTextColor || '#fbfbfe',
-                    }}
+                {/* 2. Symbolleiste (Toolbar) Card */}
+                <div className="flex items-center gap-3 p-2.5 rounded-lg border border-slate-200 bg-white shadow-2xs">
+                  <div 
+                    className="w-9 h-9 rounded-lg border border-black/15 shadow-inner shrink-0 flex items-center justify-center font-mono text-[10px] font-bold text-white/90"
+                    style={{ backgroundColor: customToolbar }}
                   >
-                    https://example.com/meine-seite
+                    <span className="drop-shadow-sm">2</span>
                   </div>
-                  <span
-                    className="px-2 py-0.5 rounded text-[10px] font-bold"
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Symbolleiste (Toolbar)
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-xs font-bold text-slate-800 truncate">
+                        {customToolbar}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySingleColor(customToolbar, 'toolbar')}
+                        className="p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                        title="Hex-Code kopieren"
+                      >
+                        {copiedSingleColor === 'toolbar' ? (
+                          <Check className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      Aktiver Tab &amp; Adressleiste
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Schrift & Icons (Text) Card */}
+                <div className="flex items-center gap-3 p-2.5 rounded-lg border border-slate-200 bg-white shadow-2xs">
+                  <div 
+                    className="w-9 h-9 rounded-lg border border-black/15 shadow-inner shrink-0 flex items-center justify-center font-mono text-[10px] font-bold"
+                    style={{ backgroundColor: customText, color: customToolbar }}
+                  >
+                    <span className="font-black">Aa</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                      <span>Schrift (UI Text)</span>
+                      <span className={`text-[9px] font-bold px-1 rounded ${toolbarContrast.isGood ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                        {toolbarContrast.ratioStr}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-xs font-bold text-slate-800 truncate">
+                        {customText}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySingleColor(customText, 'text')}
+                        className="p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                        title="Hex-Code kopieren"
+                      >
+                        {copiedSingleColor === 'text' ? (
+                          <Check className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      Tab-Titel &amp; Adress-URL
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Harmonischer Paletten-Streifen mit Farbverteilung */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                  <span>Proportionale Farbkomposition im Browser-UI:</span>
+                  <span>Rahmen 45% · Toolbar 40% · Schrift &amp; Akzent 15%</span>
+                </div>
+                <div className="h-6 w-full rounded-lg overflow-hidden flex border border-black/10 shadow-2xs">
+                  <div 
+                    className="h-full flex items-center justify-center text-[10px] font-mono font-bold transition-all px-2"
+                    style={{ width: '45%', backgroundColor: customFrame, color: customText }}
+                    title={`Rahmen: ${customFrame}`}
+                  >
+                    <span className="truncate opacity-90">Rahmen ({customFrame})</span>
+                  </div>
+                  <div 
+                    className="h-full flex items-center justify-center text-[10px] font-mono font-bold transition-all px-2"
+                    style={{ width: '40%', backgroundColor: customToolbar, color: customText }}
+                    title={`Toolbar: ${customToolbar}`}
+                  >
+                    <span className="truncate opacity-90">Toolbar ({customToolbar})</span>
+                  </div>
+                  <div 
+                    className="h-full flex items-center justify-center text-[10px] font-mono font-bold transition-all px-1"
+                    style={{ width: '15%', backgroundColor: defaultAccent, color: '#ffffff' }}
+                    title={`Akzent: ${defaultAccent}`}
+                  >
+                    <span className="truncate">Akzent</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Realistische Live Firefox UI Simulation (Mit & Ohne Regel im direkten Vergleich) */}
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-bold text-slate-700">
+                  <span className="flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Reales Firefox-Erscheinungsbild (Aktiv-Tab mit &amp; ohne Regel vs. Inaktive Tabs):</span>
+                  </span>
+
+                  {/* Umschalter zum Testen: Aktiver Tab OHNE Regel vs. MIT Regel */}
+                  <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-lg text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewActiveTabType('unmatched')}
+                      className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                        previewActiveTabType === 'unmatched'
+                          ? 'bg-white text-purple-900 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Prüft, wie sich ein aktiver Tab OHNE URL-Regel gegen den Rahmen und inaktive Tabs abhebt"
+                    >
+                      🔍 Aktiv-Tab OHNE Regel prüfen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewActiveTabType('matched')}
+                      className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                        previewActiveTabType === 'matched'
+                          ? 'bg-white text-purple-900 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      title="Prüft einen aktiven Tab MIT zugewiesener URL-Regel"
+                    >
+                      🎨 Aktiv-Tab MIT Regel
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="rounded-xl p-3 shadow-inner border border-black/15 transition-colors overflow-hidden"
+                  style={{ backgroundColor: customFrame }}
+                >
+                  {/* Window Title & Tabs Bar */}
+                  <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-0.5">
+                    {/* Window Control Dots */}
+                    <div className="flex items-center gap-1.5 pr-1 opacity-70 shrink-0">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block" />
+                    </div>
+
+                    {/* Tab 1: Tab OHNE Regel (Klickbar zum Aktivieren!) */}
+                    <div
+                      onClick={() => setPreviewActiveTabType('unmatched')}
+                      title="Klicken, um diesen Tab ohne Regel als aktiven Tab zu testen"
+                      className={`px-3 py-1.5 rounded-t-lg text-xs flex items-center gap-2 transition-all cursor-pointer shrink-0 ${
+                        previewActiveTabType === 'unmatched'
+                          ? 'font-bold shadow-xs'
+                          : 'opacity-65 hover:opacity-95'
+                      }`}
+                      style={
+                        previewActiveTabType === 'unmatched'
+                          ? {
+                              backgroundColor: unmatchedEval.tabBgCss,
+                              color: customText,
+                              borderTop: unmatchedEval.tabLineCss,
+                            }
+                          : {
+                              backgroundColor: 'transparent',
+                              color: customText,
+                              borderTop: '3px solid transparent',
+                            }
+                      }
+                    >
+                      <span className="text-xs">🌐</span>
+                      <span className="truncate max-w-[165px]">
+                        wikipedia.org (Ohne Regel)
+                      </span>
+                      <span
+                        className="text-[9px] px-1.5 py-0.2 rounded font-mono uppercase tracking-wider"
+                        style={{
+                          backgroundColor: previewActiveTabType === 'unmatched' ? `${customText}22` : `${customText}14`,
+                          color: customText,
+                        }}
+                      >
+                        {previewActiveTabType === 'unmatched' ? 'AKTIV' : 'Inaktiv'}
+                      </span>
+                    </div>
+
+                    {/* Tab 2: Inaktiver Vergleichs-Tab direkt daneben auf Rahmenfarbe */}
+                    <div
+                      className="px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors rounded-t-lg shrink-0"
+                      style={{
+                        backgroundColor: 'transparent',
+                        color: customText,
+                        opacity: 0.62,
+                        borderTop: '3px solid transparent',
+                      }}
+                      title="Inaktiver Hintergrund-Tab auf Rahmenfarbe (#frame) zum direkten Kontrast-Vergleich"
+                    >
+                      <span className="text-xs">📄</span>
+                      <span className="truncate max-w-[135px]">Startseite (Inaktiv)</span>
+                    </div>
+
+                    {/* Tab 3: Tab MIT URL-Regel (Klickbar zum Aktivieren!) */}
+                    <div
+                      onClick={() => setPreviewActiveTabType('matched')}
+                      title="Klicken, um diesen Tab mit URL-Regel als aktiven Tab zu testen"
+                      className={`relative px-3 py-1.5 rounded-t-lg text-xs flex items-center gap-2 transition-all cursor-pointer shrink-0 ${
+                        previewActiveTabType === 'matched'
+                          ? 'font-bold shadow-xs'
+                          : 'opacity-75 hover:opacity-100'
+                      }`}
+                      style={
+                        previewActiveTabType === 'matched'
+                          ? {
+                              backgroundColor: hexToRgba(defaultAccent, config.activeTabOpacity ?? 0.35),
+                              color: customText,
+                              borderTop: `3px solid ${defaultAccent}`,
+                            }
+                          : {
+                              backgroundColor: 'transparent',
+                              color: customText,
+                              borderTop: '3px solid transparent',
+                            }
+                      }
+                    >
+                      <span className="text-xs">🦊</span>
+                      <span className="truncate max-w-[155px]">prod.app (Mit Regel)</span>
+                      <span
+                        className="text-[9px] px-1.5 py-0.2 rounded font-mono uppercase tracking-wider"
+                        style={{
+                          backgroundColor: `${defaultAccent}33`,
+                          color: customText,
+                        }}
+                      >
+                        {previewActiveTabType === 'matched' ? 'AKTIV' : 'Regel'}
+                      </span>
+                      {/* Container bottom line */}
+                      <span
+                        className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full"
+                        style={{ backgroundColor: defaultAccent }}
+                      />
+                    </div>
+
+                    {/* New Tab Button */}
+                    <div
+                      className="w-6 h-6 rounded flex items-center justify-center text-xs opacity-60 hover:opacity-100 transition-opacity shrink-0"
+                      style={{ color: customText }}
+                      title="Neuen Tab öffnen"
+                    >
+                      +
+                    </div>
+                  </div>
+
+                  {/* Navigation & Toolbar Bar */}
+                  <div
+                    className="rounded-lg p-2 flex items-center gap-2 text-xs shadow-xs transition-colors"
                     style={{
-                      backgroundColor: `${config.defaultColor || '#37adff'}33`,
-                      color: config.defaultColor || '#37adff',
+                      backgroundColor: customToolbar,
+                      color: customText,
                     }}
                   >
-                    TabChroma
+                    {/* Navigation Buttons */}
+                    <div className="flex items-center gap-1.5 px-1 opacity-80 shrink-0">
+                      <span className="cursor-pointer hover:opacity-100">‹</span>
+                      <span className="cursor-pointer hover:opacity-100">›</span>
+                      <span className="cursor-pointer hover:opacity-100">↻</span>
+                    </div>
+
+                    {/* URL Omnibox */}
+                    <div
+                      className="flex-1 flex items-center gap-2 px-3 py-1 rounded-md text-[11px] font-mono border transition-colors shadow-2xs min-w-0"
+                      style={{
+                        backgroundColor: `${customFrame}99`,
+                        borderColor: `${customText}26`,
+                        color: customText,
+                      }}
+                    >
+                      <span className="opacity-60 text-[10px]">🔒</span>
+                      <span className="font-semibold truncate">
+                        {previewActiveTabType === 'unmatched'
+                          ? 'https://de.wikipedia.org/wiki/Firefox (Keine Regel aktiv)'
+                          : 'https://prod.app/dashboard (Regel aktiv)'}
+                      </span>
+                    </div>
+
+                    {/* Container Badge & Extension Icon */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {previewActiveTabType === 'matched' ? (
+                        <span
+                          className="px-2 py-0.5 rounded text-[10px] font-bold shadow-2xs"
+                          style={{
+                            backgroundColor: `${defaultAccent}2b`,
+                            color: defaultAccent,
+                            border: `1px solid ${defaultAccent}55`,
+                          }}
+                        >
+                          Container
+                        </span>
+                      ) : (
+                        <span
+                          className="px-2 py-0.5 rounded text-[10px] font-medium opacity-75"
+                          style={{
+                            backgroundColor: `${customText}15`,
+                            color: customText,
+                          }}
+                        >
+                          Standard-Tab (Ohne Regel)
+                        </span>
+                      )}
+                      <span 
+                        className="w-5 h-5 rounded flex items-center justify-center text-[11px] opacity-80"
+                        style={{ color: customText }}
+                      >
+                        ⚙️
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* WCAG Kontrast & Unterscheidbarkeits-Matrix (3 Spalten inkl. Aktiv-Tab ohne Regel vs. Inaktive Tabs) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs pt-0.5">
+                {/* 1. Kontrast: Schrift auf Toolbar */}
+                <div className={`p-2.5 rounded-lg border flex items-center justify-between ${
+                  toolbarContrast.isGood 
+                    ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' 
+                    : 'bg-amber-50/60 border-amber-200 text-amber-950'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {toolbarContrast.isGood ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    )}
+                    <div>
+                      <div className="font-bold text-[11px]">
+                        Schrift auf Symbolleiste
+                      </div>
+                      <div className="text-[10px] opacity-75">
+                        {toolbarContrast.label} (Stufe {toolbarContrast.level})
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-xs">
+                    {toolbarContrast.ratioStr}
+                  </span>
+                </div>
+
+                {/* 2. Kontrast: Schrift auf Rahmen */}
+                <div className={`p-2.5 rounded-lg border flex items-center justify-between ${
+                  frameContrast.isGood 
+                    ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' 
+                    : 'bg-amber-50/60 border-amber-200 text-amber-950'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {frameContrast.isGood ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    )}
+                    <div>
+                      <div className="font-bold text-[11px]">
+                        Schrift auf Rahmen (Inaktiv)
+                      </div>
+                      <div className="text-[10px] opacity-75">
+                        {frameContrast.label} (Stufe {frameContrast.level})
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-xs">
+                    {frameContrast.ratioStr}
+                  </span>
+                </div>
+
+                {/* 3. Unterscheidbarkeit: Aktiv-Tab OHNE Regel vs. Inaktive Tabs */}
+                <div className={`p-2.5 rounded-lg border flex items-center justify-between ${
+                  unmatchedEval.distinctionLevel === 'clear'
+                    ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+                    : unmatchedEval.distinctionLevel === 'moderate'
+                    ? 'bg-amber-50/60 border-amber-200 text-amber-950'
+                    : 'bg-rose-50/70 border-rose-300 text-rose-950'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {unmatchedEval.distinctionLevel === 'clear' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle className={`w-4 h-4 shrink-0 ${unmatchedEval.distinctionLevel === 'moderate' ? 'text-amber-600' : 'text-rose-600'}`} />
+                    )}
+                    <div>
+                      <div className="font-bold text-[11px]">
+                        Aktiv-Tab (ohne Regel) vs. Inaktiv
+                      </div>
+                      <div className="text-[10px] opacity-75">
+                        {unmatchedEval.distinctionLabel}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-xs">
+                    {unmatchedEval.frameContrastStr}
                   </span>
                 </div>
               </div>
@@ -977,6 +1575,384 @@ export const DefaultSettingsCard: React.FC<DefaultSettingsCardProps> = ({
             </div>
           </div>
         )}
+
+        {/* 4b. Aktiv-Tab Highlighting OHNE Regel – Gegen das Theme prüfen & einstellen (In allen Theme-Modi verfügbar!) */}
+        <div className="p-4 bg-white rounded-xl border border-indigo-200/90 shadow-2xs space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Eye className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="text-xs font-bold text-slate-900">
+                  Aktiv-Tab Highlighting ohne Regel (Gegen das Theme prüfen &amp; einstellen)
+                </span>
+                <span
+                  className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 border ${
+                    unmatchedEval.distinctionLevel === 'clear'
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                      : unmatchedEval.distinctionLevel === 'moderate'
+                      ? 'bg-amber-100 text-amber-800 border-amber-200'
+                      : 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
+                  }`}
+                >
+                  {unmatchedEval.distinctionLevel === 'clear'
+                    ? '✓ Aktiv-Tab klar von anderen unterscheidbar'
+                    : unmatchedEval.distinctionLevel === 'moderate'
+                    ? '⚠️ Mäßig unterscheidbar'
+                    : '⛔ Kaum von inaktiven Tabs unterscheidbar!'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                Prüft und steuert, wie ein <strong>aktiver Tab ohne zutreffende URL-Regel</strong> (z. B. Startseite, Google, Wikipedia) gegen den Fensterrahmen (<code>{effectiveFrame}</code>) hervorgehoben wird, damit Sie den aktiven Tab jederzeit sofort von inaktiven Tabs unterscheiden können.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-start lg:self-center">
+              <button
+                type="button"
+                onClick={handleAutoOptimizeUnmatchedTab}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-xs cursor-pointer"
+                title="Berechnet automatisch eine kontrastreiche Tab-Aufhellung und Fokus-Linie passend zum aktuellen Theme"
+              >
+                <Wand2 className="w-3.5 h-3.5 text-amber-300" />
+                <span>⚡ Optimal gegen Theme abheben</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Auswahl-Modi für Aktiv-Tab ohne Regel */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-slate-800">
+              1. Wie soll ein aktiver Tab OHNE Regel hervorgehoben werden?
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+              {[
+                {
+                  id: 'subtle_lift' as UnmatchedActiveTabStyle,
+                  title: 'Kontrast-Lift & Fokus-Linie',
+                  badge: 'Empfohlen',
+                  desc: 'Hebt die Tab-Fläche automatisch vom Rahmen ab und zeigt eine dezente Fokus-Linie oben.',
+                },
+                {
+                  id: 'default_accent' as UnmatchedActiveTabStyle,
+                  title: 'Standard-Akzentfarbe',
+                  badge: defaultAccent,
+                  desc: 'Färbt auch aktive Tabs ohne Regel sanft in Ihrer Standard-Containerfarbe.',
+                },
+                {
+                  id: 'custom_color' as UnmatchedActiveTabStyle,
+                  title: 'Eigene Highlight-Farbe',
+                  badge: 'Individuell',
+                  desc: 'Eigene Hintergrund- und Linienfarbe speziell für aktive Tabs ohne Regel festlegen.',
+                },
+                {
+                  id: 'toolbar_only' as UnmatchedActiveTabStyle,
+                  title: 'Nur Toolbar-Farbe (Nativ)',
+                  badge: 'Minimal',
+                  desc: 'Kein Zusatz-Highlight; nutzt nur die reine Toolbar-Farbe ohne obere Linie.',
+                },
+              ].map((opt) => {
+                const isSelected = (config.unmatchedActiveTabStyle || 'subtle_lift') === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => onChangeConfig({ unmatchedActiveTabStyle: opt.id })}
+                    className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                      isSelected
+                        ? 'border-indigo-500 bg-indigo-50/60 ring-2 ring-indigo-400/25 shadow-xs'
+                        : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:bg-white'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1.5 font-bold text-slate-900">
+                        <span>{opt.title}</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                          isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {opt.badge}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        {opt.desc}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Farb- & Linien-Einstellungen + Live-Vergleich gegen das Theme */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+            {/* Links (5 Spalten): Einstellungs-Regler für Fläche & Fokus-Linie */}
+            <div className="lg:col-span-5 p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                  <span>2. Feinabstimmung (Fläche &amp; Fokus-Linie)</span>
+                  <span className="text-[10px] font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                    Tab: {unmatchedEval.tabBgHex}
+                  </span>
+                </div>
+
+                {/* Schalter für obere Fokus-Linie (tab_line) */}
+                {config.unmatchedActiveTabStyle !== 'toolbar_only' && (
+                  <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded-lg bg-white border border-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={config.enableUnmatchedTabLine !== false}
+                      onChange={(e) => onChangeConfig({ enableUnmatchedTabLine: e.target.checked })}
+                      className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="text-xs">
+                      <span className="font-semibold text-slate-800 block">
+                        Obere 3px Fokus-Linie (tab_line) anzeigen
+                      </span>
+                      <span className="text-[10px] text-slate-500 block leading-tight mt-0.5">
+                        Garantiert sofortige Erkennbarkeit des aktiven Tabs auch bei dunklen OLED-/Schiefer-Themes.
+                      </span>
+                    </div>
+                  </label>
+                )}
+
+                {/* Farbwähler für Aktiv-Tab Hintergrund (ohne Regel) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-700">Aktiv-Tab Hintergrund (ohne Regel):</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="color"
+                        value={config.unmatchedActiveTabBg || unmatchedEval.tabBgHex}
+                        onChange={(e) =>
+                          onChangeConfig({
+                            unmatchedActiveTabStyle: 'custom_color',
+                            unmatchedActiveTabBg: e.target.value,
+                          })
+                        }
+                        className="w-6 h-6 rounded cursor-pointer border border-slate-300 bg-white p-0.5"
+                        title="Eigene Hintergrundfarbe für aktive Tabs ohne Regel wählen"
+                      />
+                      <span className="font-mono text-[11px] font-bold text-slate-800">
+                        {unmatchedEval.tabBgHex}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[10px] text-slate-400 mr-1">Schnell-Kontrast:</span>
+                    {[
+                      { hex: shiftHexForTabLift(effectiveFrame, effectiveToolbar), label: 'Auto-Lift' },
+                      { hex: '#383747', label: 'Schiefer-Hell' },
+                      { hex: '#2d3748', label: 'Blaugrau' },
+                      { hex: '#e2e8f0', label: 'Silber (Light)' },
+                    ].map((sw) => (
+                      <button
+                        key={sw.label}
+                        type="button"
+                        onClick={() =>
+                          onChangeConfig({
+                            unmatchedActiveTabStyle: 'custom_color',
+                            unmatchedActiveTabBg: sw.hex,
+                          })
+                        }
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-white hover:bg-indigo-50 text-slate-700 font-medium cursor-pointer"
+                      >
+                        {sw.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Farbwähler für obere Fokus-Linie (tab_line) */}
+                {config.unmatchedActiveTabStyle !== 'toolbar_only' && config.enableUnmatchedTabLine !== false && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200/80">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-slate-700">Fokus-Linie oben (tab_line):</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          value={config.unmatchedActiveTabLine || unmatchedEval.tabLineHex || defaultAccent}
+                          onChange={(e) =>
+                            onChangeConfig({
+                              unmatchedActiveTabLine: e.target.value,
+                            })
+                          }
+                          className="w-6 h-6 rounded cursor-pointer border border-slate-300 bg-white p-0.5"
+                          title="Farbe der oberen 3px Fokus-Linie für aktive Tabs ohne Regel"
+                        />
+                        <span className="font-mono text-[11px] font-bold text-slate-800">
+                          {unmatchedEval.tabLineHex || 'Auto'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[10px] text-slate-400 mr-1">Linien-Farbe:</span>
+                      {[
+                        { hex: undefined, label: 'Auto (Theme)' },
+                        { hex: defaultAccent, label: 'Standard-Akzent' },
+                        { hex: '#94a3b8', label: 'Neutral-Silber' },
+                        { hex: '#38bdf8', label: 'Sky-Blau' },
+                        { hex: '#a855f7', label: 'Violett' },
+                      ].map((sw) => (
+                        <button
+                          key={sw.label}
+                          type="button"
+                          onClick={() => onChangeConfig({ unmatchedActiveTabLine: sw.hex })}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-white hover:bg-indigo-50 text-slate-700 font-medium cursor-pointer"
+                        >
+                          {sw.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Warnhinweis falls kaum unterscheidbar */}
+              {!unmatchedEval.canDistinguish && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[11px] flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Warnung:</strong> {unmatchedEval.distinctionHint} Klicken Sie auf <strong>„⚡ Optimal gegen Theme abheben“</strong>, um den Aktiv-Tab sichtbar zu machen.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rechts (7 Spalten): Live-Prüfung & direkter Tab-Unterscheidungs-Test gegen das Theme */}
+            <div className="lg:col-span-7 p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-800">
+                  3. Live-Prüfung gegen das Theme: Kann man den Aktiv-Tab unterscheiden?
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">
+                  Rahmen: {effectiveFrame} · Toolbar: {effectiveToolbar}
+                </span>
+              </div>
+
+              {/* Direkter visueller Tab-Leisten-Test auf echtem Theme-Rahmen */}
+              <div
+                className="p-3 rounded-xl border border-black/20 shadow-inner space-y-2"
+                style={{ backgroundColor: effectiveFrame }}
+              >
+                <div className="text-[10px] font-mono opacity-75 flex items-center justify-between px-1" style={{ color: effectiveText }}>
+                  <span>Hintergrund = Browser-Rahmen ({effectiveFrame})</span>
+                  <span>Direkter 1:1 Vergleich der 3 Tab-Arten:</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  {/* Karte 1: AKTIVER TAB OHNE REGEL */}
+                  <div
+                    className="p-2.5 rounded-t-lg flex flex-col justify-between gap-1.5 shadow-sm transition-all"
+                    style={{
+                      backgroundColor: unmatchedEval.tabBgCss,
+                      color: effectiveText,
+                      borderTop: unmatchedEval.tabLineCss,
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-400/30">
+                        1. Aktiv (Ohne Regel)
+                      </span>
+                      <span className="text-[10px] font-mono opacity-75">{unmatchedEval.tabBgHex}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-bold truncate py-0.5">
+                      <span>🌐</span>
+                      <span className="truncate">wikipedia.org</span>
+                    </div>
+                    <div className="text-[10px] opacity-80 leading-tight">
+                      Abhebung: <strong>{unmatchedEval.frameContrastStr}</strong>
+                      {unmatchedEval.hasVisibleTopLine ? ' + Linie' : ' (ohne Linie)'}
+                    </div>
+                  </div>
+
+                  {/* Karte 2: INAKTIVER TAB */}
+                  <div
+                    className="p-2.5 rounded-t-lg flex flex-col justify-between gap-1.5 border border-dashed transition-all"
+                    style={{
+                      backgroundColor: effectiveFrame,
+                      color: effectiveText,
+                      borderColor: `${effectiveText}25`,
+                      opacity: 0.72,
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-500/20 border border-slate-400/20">
+                        2. Inaktiver Tab
+                      </span>
+                      <span className="text-[10px] font-mono opacity-75">{effectiveFrame}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-medium truncate py-0.5">
+                      <span>📄</span>
+                      <span className="truncate">duckduckgo.com</span>
+                    </div>
+                    <div className="text-[10px] opacity-75 leading-tight">
+                      Liegt direkt auf dem Rahmen-Hintergrund
+                    </div>
+                  </div>
+
+                  {/* Karte 3: AKTIVER TAB MIT REGEL */}
+                  <div
+                    className="relative p-2.5 rounded-t-lg flex flex-col justify-between gap-1.5 shadow-sm transition-all"
+                    style={{
+                      backgroundColor: hexToRgba(defaultAccent, config.activeTabOpacity ?? 0.35),
+                      color: effectiveText,
+                      borderTop: `3px solid ${defaultAccent}`,
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-500/30 border border-sky-400/40">
+                        3. Aktiv (Mit Regel)
+                      </span>
+                      <span className="text-[10px] font-mono opacity-85">{defaultAccent}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-bold truncate py-0.5">
+                      <span>🚀</span>
+                      <span className="truncate">prod.example.com</span>
+                    </div>
+                    <div className="text-[10px] opacity-85 leading-tight">
+                      Container-Farbe ({Math.round((config.activeTabOpacity ?? 0.35) * 100)}% Deckkraft)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3 Prüf-Kennzahlen unten */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                <div className={`p-2 rounded-lg border ${
+                  unmatchedEval.frameContrastRatio >= 1.18
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50/70 border-amber-200 text-amber-900'
+                }`}>
+                  <div className="text-[10px] font-semibold opacity-75">Flächen-Abhebung zum Rahmen</div>
+                  <div className="font-bold font-mono text-xs mt-0.5">
+                    {unmatchedEval.frameContrastStr} ({unmatchedEval.frameContrastRatio >= 1.18 ? 'Deutlich' : 'Gering'})
+                  </div>
+                </div>
+
+                <div className={`p-2 rounded-lg border ${
+                  unmatchedEval.hasVisibleTopLine
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : 'bg-slate-100 border-slate-200 text-slate-700'
+                }`}>
+                  <div className="text-[10px] font-semibold opacity-75">Obere Fokus-Linie (tab_line)</div>
+                  <div className="font-bold font-mono text-xs mt-0.5">
+                    {unmatchedEval.tabLineHex ? `${unmatchedEval.lineContrastRatio.toFixed(1)}:1 (${unmatchedEval.tabLineHex})` : 'Deaktiviert'}
+                  </div>
+                </div>
+
+                <div className={`p-2 rounded-lg border ${
+                  unmatchedEval.textContrast.isGood
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : 'bg-rose-50/70 border-rose-200 text-rose-900'
+                }`}>
+                  <div className="text-[10px] font-semibold opacity-75">Text-Lesbarkeit im Aktiv-Tab</div>
+                  <div className="font-bold font-mono text-xs mt-0.5">
+                    {unmatchedEval.textContrast.ratioStr} (WCAG {unmatchedEval.textContrast.level})
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 5. Deckkraft des aktiven Tabs & Favicon-Kontrast (Löst verschwommene Icons) */}

@@ -440,15 +440,62 @@ async function applyThemeForTab(windowId, rule) {
       console.warn('[TabChroma] Theme update error:', e);
     }
   } else {
-    // Unmatched Tab im Hybrid-Modus:
-    // Wendet das stabile Basis-Farbschema ohne Tab-Akzent an,
-    // um ein plötzliches Umschalten zwischen Weiß und Schwarz beim Tab-Wechsel zu verhindern!
+    // Unmatched Tab (Aktiv-Tab OHNE Regel):
+    // Wendet das konfigurierte Aktiv-Tab Highlighting gegen das Theme an,
+    // damit ein aktiver Tab ohne Regel klar von inaktiven Tabs (Frame) unterscheidbar bleibt!
     try {
       const baseColors = getBaseThemePalette();
+      const unmatchedStyle = appConfig.unmatchedActiveTabStyle || 'subtle_lift';
+      const enableLine = appConfig.enableUnmatchedTabLine !== false;
+      const defaultAccent = appConfig.defaultColor || '#37adff';
+      const opacity = (typeof appConfig.activeTabOpacity === 'number') ? appConfig.activeTabOpacity : 0.35;
+
+      function shiftHex(hexStr, delta) {
+        const clean = (hexStr || '#2b2a33').replace('#', '');
+        const num = parseInt(clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean, 16) || 0x2b2a33;
+        const r = Math.min(255, Math.max(0, ((num >> 16) & 255) + delta));
+        const g = Math.min(255, Math.max(0, ((num >> 8) & 255) + delta));
+        const b = Math.min(255, Math.max(0, (num & 255) + delta));
+        return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+      }
+
+      function getLum(hexStr) {
+        const clean = (hexStr || '#1c1b22').replace('#', '');
+        const num = parseInt(clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean, 16) || 0;
+        const r = (num >> 16) & 255, g = (num >> 8) & 255, b = num & 255;
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      }
+
+      const isDarkFrame = getLum(baseColors.frame) < 0.5;
+      let tabSelected = baseColors.toolbar;
+      let tabLine = 'transparent';
+
+      if (unmatchedStyle === 'subtle_lift') {
+        const frameLum = getLum(baseColors.frame);
+        const tbLum = getLum(baseColors.toolbar);
+        if (Math.abs(frameLum - tbLum) < 0.07) {
+          tabSelected = shiftHex(baseColors.toolbar, isDarkFrame ? 24 : -18);
+        } else {
+          tabSelected = shiftHex(baseColors.toolbar, isDarkFrame ? 12 : -8);
+        }
+        tabLine = enableLine ? (appConfig.unmatchedActiveTabLine || defaultAccent) : 'transparent';
+      } else if (unmatchedStyle === 'default_accent') {
+        tabSelected = hexToRgba(defaultAccent, Math.max(0.2, opacity * 0.85));
+        tabLine = enableLine ? (appConfig.unmatchedActiveTabLine || defaultAccent) : 'transparent';
+      } else if (unmatchedStyle === 'custom_color') {
+        tabSelected = appConfig.unmatchedActiveTabBg || shiftHex(baseColors.toolbar, isDarkFrame ? 26 : -20);
+        tabLine = enableLine ? (appConfig.unmatchedActiveTabLine || defaultAccent) : 'transparent';
+      } else {
+        // toolbar_only
+        tabSelected = baseColors.toolbar;
+        tabLine = enableLine ? (appConfig.unmatchedActiveTabLine || defaultAccent) : 'transparent';
+      }
+
       await browser.theme.update(windowId, {
         colors: {
           ...baseColors,
-          tab_line: 'transparent'
+          tab_selected: tabSelected,
+          tab_line: tabLine
         }
       });
     } catch (e) {
@@ -1894,6 +1941,23 @@ document.addEventListener('DOMContentLoaded', async () => {
               <input type="file" id="theme-file-addon-input" accept=".json,application/json" style="display:none;">
             </div>
           </div>
+
+          <!-- Aktiv-Tab ohne Regel (Highlighting gegen Theme) -->
+          <div style="margin-top:8px; padding-top:8px; border-top: 1px solid var(--col-border, #334155); display:flex; flex-direction:column; gap:6px;">
+            <label style="font-size: 10px; font-weight: 700; color: var(--muted, #94a3b8); text-transform: uppercase;">
+              🔍 Aktiv-Tab Highlighting (ohne Regel) gegen Theme:
+            </label>
+            <select id="def-unmatched-tab-style" style="padding: 5px 8px; font-size: 11px;">
+              <option value="subtle_lift">✨ Dezenter Kontrast-Lift (Empfohlen)</option>
+              <option value="default_accent">🎯 Standard-Akzentfarbe (Tönung)</option>
+              <option value="custom_color">🎨 Eigene Highlight-Farbe</option>
+              <option value="toolbar_only">🧱 Nur Toolbar-Farbe (Nativ)</option>
+            </select>
+            <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text, #f8fafc); cursor:pointer;">
+              <input type="checkbox" id="def-unmatched-tab-line" checked>
+              <span>3px Akzentlinie (tab_line) auch bei aktivem Tab ohne Regel zeigen</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -2132,7 +2196,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <button type="button" id="btn-bulk-filter-selected" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px; display: none; background: #854d0e; border-color: #ca8a04; color: #fef08a;" title="Tabelle so filtern, dass nur diese ausgewählten Regeln angezeigt werden">⭐ Auf Ausgewählte filtern</button>
           <button type="button" id="btn-bulk-select-all" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">☑️ Alle auswählen</button>
           <button type="button" id="btn-bulk-select-all-global" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px; display: none;" title="Wählt ausnahmslos alle Regeln in Firefox aus, auch jene außerhalb des aktuellen Suchfilters">🌐 Alle Regeln (global)</button>
-          <button type="button" id="btn-bulk-clear" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">✕ Auswahl aufheben</button>
+          <button type="button" id="btn-bulk-clear" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">✕ Alles abwählen</button>
         </div>
       </div>
 
@@ -2633,9 +2697,10 @@ document.addEventListener('DOMContentLoaded', async () => {
               <input type="checkbox" id="preset-pack-overwrite-conflicts" checked>
               <span>Bestehende Regeln bei gleichem URL-Pattern aktualisieren</span>
             </label>
-            <div style="display: flex; gap: 8px;">
-              <button type="button" id="btn-import-pack-replace" class="btn btn-danger" style="font-size: 11px; padding: 6px 12px;" title="Ersetzt alle aktuellen Regeln komplett durch die ausgewählten Pack-Regeln">Alle Regeln ersetzen</button>
-              <button type="button" id="btn-import-pack-selected" class="btn btn-primary" style="font-size: 11px; padding: 6px 14px; background: #9333ea; border-color: #a855f7;" title="Fügt die ausgewählten Regeln zu bestehenden Regeln hinzu">+ Ausgewählte hinzufügen</button>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" id="btn-import-pack-entire" class="btn btn-warning" style="font-size: 11px; padding: 6px 13px; background: #9333ea; border-color: #a855f7; color: #fff; font-weight: bold;" title="Importiert das komplette Preset-Set und überschreibt alle bestehenden Regeln">⚡ Komplettes Set importieren (Überschreiben)</button>
+              <button type="button" id="btn-import-pack-replace" class="btn btn-danger" style="font-size: 11px; padding: 6px 12px;" title="Ersetzt alle aktuellen Regeln komplett durch die ausgewählten Pack-Regeln">Ausgewählte ersetzen</button>
+              <button type="button" id="btn-import-pack-selected" class="btn btn-primary" style="font-size: 11px; padding: 6px 14px; background: #3b82f6; border-color: #60a5fa;" title="Fügt die ausgewählten Regeln zu bestehenden Regeln hinzu">+ Ausgewählte hinzufügen</button>
             </div>
           </div>
         </div>
@@ -2943,6 +3008,11 @@ function renderDefaultsCard() {
   if (defToolbarInput) defToolbarInput.value = toolbarColor.toUpperCase();
   if (defTextPicker) defTextPicker.value = textColor;
   if (defTextInput) defTextInput.value = textColor.toUpperCase();
+
+  const defUnmatchedStyle = document.getElementById('def-unmatched-tab-style');
+  if (defUnmatchedStyle) defUnmatchedStyle.value = appConfig.unmatchedActiveTabStyle || 'subtle_lift';
+  const defUnmatchedLine = document.getElementById('def-unmatched-tab-line');
+  if (defUnmatchedLine) defUnmatchedLine.checked = appConfig.enableUnmatchedTabLine !== false;
 
   // Apply base theme mode & custom variables directly to options page layout!
   applyOptionsPageTheme();
@@ -3297,6 +3367,14 @@ document.getElementById('def-hybrid-indicator-style')?.addEventListener('change'
   appConfig.hybridTabIndicatorStyle = e.target.value;
   saveConfigToStorage();
 });
+document.getElementById('def-unmatched-tab-style')?.addEventListener('change', (e) => {
+  appConfig.unmatchedActiveTabStyle = e.target.value;
+  saveConfigToStorage();
+});
+document.getElementById('def-unmatched-tab-line')?.addEventListener('change', (e) => {
+  appConfig.enableUnmatchedTabLine = e.target.checked;
+  saveConfigToStorage();
+});
 
 // Theme export button for colleagues
 document.getElementById('btn-export-theme')?.addEventListener('click', () => {
@@ -3314,6 +3392,10 @@ document.getElementById('btn-export-theme')?.addEventListener('click', () => {
     enableFaviconContrastHalo: appConfig.enableFaviconContrastHalo !== false,
     hybridWindowBehavior: appConfig.hybridWindowBehavior || 'static_window',
     hybridTabIndicatorStyle: appConfig.hybridTabIndicatorStyle || 'accent_line_and_fill',
+    unmatchedActiveTabStyle: appConfig.unmatchedActiveTabStyle || 'subtle_lift',
+    unmatchedActiveTabBg: appConfig.unmatchedActiveTabBg,
+    unmatchedActiveTabLine: appConfig.unmatchedActiveTabLine,
+    enableUnmatchedTabLine: appConfig.enableUnmatchedTabLine !== false,
   };
   const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(themePkg, null, 2));
   const a = document.createElement('a');
@@ -4267,30 +4349,58 @@ function updateBulkToolbar() {
   const visibleSelectedCount = visible.filter((r) => selectedRuleIds.has(r.id)).length;
   const hiddenSelectedCount = selectedRuleIds.size - visibleSelectedCount;
   const totalSelectedCount = selectedRuleIds.size;
+  const allVisibleSelected = visible.length > 0 && visibleSelectedCount === visible.length;
+  const anyVisibleSelected = visibleSelectedCount > 0;
 
   if (masterChk) {
     if (visible.length === 0 || visibleSelectedCount === 0) {
       masterChk.checked = false;
       masterChk.indeterminate = false;
-    } else if (visibleSelectedCount === visible.length) {
+      masterChk.title = 'Alle ' + visible.length + ' Regeln auswählen';
+    } else if (allVisibleSelected) {
       masterChk.checked = true;
       masterChk.indeterminate = false;
+      masterChk.title = isFiltered ? 'Alle ' + visible.length + ' Treffer abwählen' : 'Alle ' + visible.length + ' Regeln abwählen';
     } else {
       masterChk.checked = false;
       masterChk.indeterminate = true;
+      masterChk.title = visibleSelectedCount + ' von ' + visible.length + ' ausgewählt (Klicken zum Abwählen)';
     }
   }
 
-  // Dynamic button labels
+  // Dynamic button labels: Wechselt Text und Funktion zwischen "Alle auswählen" und "Alle abwählen"
   if (btnSelectAll) {
-    if (isFiltered) {
-      btnSelectAll.textContent = (visibleSelectedCount === visible.length && hiddenSelectedCount === 0)
-        ? '✓ Alle ' + visible.length + ' Treffer gewählt'
-        : '☑️ Alle ' + visible.length + ' Treffer auswählen';
-      btnSelectAll.title = 'Beschränkt die Auswahl strikt auf die ' + visible.length + ' gefilterten Treffer';
+    if (allVisibleSelected) {
+      btnSelectAll.textContent = isFiltered ? '✕ Alle ' + visible.length + ' Treffer abwählen' : '✕ Alle abwählen';
+      btnSelectAll.title = 'Hebt die Auswahl aller ' + visible.length + ' sichtbaren Regeln auf';
+      btnSelectAll.style.background = '#334155';
+      btnSelectAll.style.borderColor = '#475569';
+      btnSelectAll.style.color = '#f1f5f9';
     } else {
-      btnSelectAll.textContent = '☑️ Alle auswählen';
-      btnSelectAll.title = 'Wählt alle ' + allRules.length + ' Regeln aus';
+      btnSelectAll.textContent = isFiltered ? '☑️ Alle ' + visible.length + ' Treffer auswählen' : '☑️ Alle auswählen';
+      btnSelectAll.title = 'Wählt alle ' + visible.length + ' sichtbaren Regeln aus';
+      btnSelectAll.style.background = '';
+      btnSelectAll.style.borderColor = '';
+      btnSelectAll.style.color = '';
+    }
+  }
+
+  const btnBulkClear = document.getElementById('btn-bulk-clear');
+  if (btnBulkClear) {
+    if (totalSelectedCount > 0) {
+      btnBulkClear.textContent = '✕ Alles abwählen (' + totalSelectedCount + ')';
+      btnBulkClear.title = 'Hebt die gesamte Auswahl aller ' + totalSelectedCount + ' markierten Regeln auf';
+      btnBulkClear.style.display = 'inline-block';
+      btnBulkClear.disabled = false;
+      btnBulkClear.style.opacity = '1';
+      btnBulkClear.style.cursor = 'pointer';
+    } else {
+      btnBulkClear.textContent = '✕ Alles abwählen';
+      btnBulkClear.title = 'Keine Regeln ausgewählt';
+      btnBulkClear.style.display = 'none';
+      btnBulkClear.disabled = true;
+      btnBulkClear.style.opacity = '0.4';
+      btnBulkClear.style.cursor = 'not-allowed';
     }
   }
 
@@ -4323,9 +4433,13 @@ function updateBulkToolbar() {
   const btnSelectFiltered = document.getElementById('btn-select-filtered');
   if (btnSelectFiltered) {
     btnSelectFiltered.style.display = (isFiltered && visible.length > 0) ? 'inline-block' : 'none';
-    btnSelectFiltered.textContent = (visibleSelectedCount === visible.length && hiddenSelectedCount === 0)
-      ? '✓ ' + visible.length + ' Treffer ausgewählt'
-      : '☑️ ' + visible.length + ' Treffer auswählen';
+    if (allVisibleSelected && hiddenSelectedCount === 0) {
+      btnSelectFiltered.textContent = '✕ ' + visible.length + ' Treffer abwählen';
+      btnSelectFiltered.title = 'Hebt die Auswahl dieser Treffer auf';
+    } else {
+      btnSelectFiltered.textContent = '☑️ ' + visible.length + ' Treffer auswählen';
+      btnSelectFiltered.title = 'Wählt exklusiv diese ' + visible.length + ' Treffer aus';
+    }
   }
 
   if (countBadge) {
@@ -4785,27 +4899,31 @@ function initBulkToolbar() {
   // Master Checkbox (Table Header)
   document.getElementById('chk-all-rules')?.addEventListener('change', () => {
     const visible = getFilteredRules();
-    const allVisibleSelected = visible.length > 0 && visible.every((r) => selectedRuleIds.has(r.id));
-    if (allVisibleSelected) {
-      // Deselect only the visible rules
+    if (visible.length === 0) return;
+    const allVisibleSelected = visible.every((r) => selectedRuleIds.has(r.id));
+    const anyVisibleSelected = visible.some((r) => selectedRuleIds.has(r.id));
+    if (allVisibleSelected || anyVisibleSelected) {
+      // Wenn alle ODER manuell ausgewählte Regeln markiert sind: Alle sichtbaren abwählen!
       visible.forEach((r) => selectedRuleIds.delete(r.id));
     } else {
-      // Add visible rules to selection without wiping selections from previous searches!
+      // Wenn keine Regeln markiert sind: Alle sichtbaren auswählen!
       visible.forEach((r) => selectedRuleIds.add(r.id));
     }
     updateBulkToolbar();
     renderRules();
   });
 
-  // Select all & clear buttons
+  // Select all & toggle deselect button
   document.getElementById('btn-bulk-select-all')?.addEventListener('click', () => {
     const visible = getFilteredRules();
-    const isFiltered = !!rulesFilterQuery.trim() || showOnlySelectedMode;
-    if (isFiltered) {
-      // Add all visible filtered rules to selection without wiping previous selections!
-      visible.forEach((r) => selectedRuleIds.add(r.id));
+    if (visible.length === 0) return;
+    const allVisibleSelected = visible.every((r) => selectedRuleIds.has(r.id));
+    if (allVisibleSelected) {
+      // Wenn bereits alle sichtbar gewählt sind: Alle sichtbaren abwählen!
+      visible.forEach((r) => selectedRuleIds.delete(r.id));
     } else {
-      (appConfig.rules || []).forEach((r) => selectedRuleIds.add(r.id));
+      // Wenn nicht alle gewählt sind: Alle sichtbaren auswählen!
+      visible.forEach((r) => selectedRuleIds.add(r.id));
     }
     updateBulkToolbar();
     renderRules();
@@ -4819,9 +4937,15 @@ function initBulkToolbar() {
 
   document.getElementById('btn-select-filtered')?.addEventListener('click', () => {
     const visible = getFilteredRules();
-    // Click on "Nur diese Treffer": clear non-matching rules and select ONLY the filtered hits!
-    selectedRuleIds.clear();
-    visible.forEach((r) => selectedRuleIds.add(r.id));
+    if (visible.length === 0) return;
+    const allVisibleSelected = visible.every((r) => selectedRuleIds.has(r.id));
+    if (allVisibleSelected && selectedRuleIds.size === visible.length) {
+      selectedRuleIds.clear();
+    } else {
+      // Click on "Nur diese Treffer": clear non-matching rules and select ONLY the filtered hits!
+      selectedRuleIds.clear();
+      visible.forEach((r) => selectedRuleIds.add(r.id));
+    }
     updateBulkToolbar();
     renderRules();
   });
@@ -5589,6 +5713,9 @@ function initPresetPacks() {
   document.getElementById('btn-toggle-all-pack-rules')?.addEventListener('click', () => {
     toggleAllPackRules();
   });
+  document.getElementById('btn-import-pack-entire')?.addEventListener('click', async () => {
+    await importEntirePresetPack();
+  });
   document.getElementById('btn-import-pack-selected')?.addEventListener('click', async () => {
     await importSelectedPresetPackRules(false);
   });
@@ -5759,8 +5886,10 @@ function renderPresetPackDetails() {
 
   const toggleBtn = document.getElementById('btn-toggle-all-pack-rules');
   if (toggleBtn) {
-    const allSelected = rules.every((r) => selectedPresetRuleIds.has(r.id));
-    toggleBtn.textContent = allSelected ? 'Alle abwählen' : 'Alle auswählen';
+    const allSelected = rules.length > 0 && rules.every((r) => selectedPresetRuleIds.has(r.id));
+    const anySelected = rules.some((r) => selectedPresetRuleIds.has(r.id));
+    toggleBtn.textContent = (allSelected || anySelected) ? '✕ Alle abwählen' : '☑️ Alle auswählen';
+    toggleBtn.title = (allSelected || anySelected) ? 'Hebt die Auswahl der Regeln auf' : 'Wählt alle Regeln aus';
   }
 }
 
@@ -5775,8 +5904,10 @@ function toggleAllPackRules() {
       (r.pattern && r.pattern.toLowerCase().includes(q))
     );
   });
+  if (rules.length === 0) return;
   const allSelected = rules.every((r) => selectedPresetRuleIds.has(r.id));
-  if (allSelected) {
+  const anySelected = rules.some((r) => selectedPresetRuleIds.has(r.id));
+  if (allSelected || anySelected) {
     rules.forEach((r) => selectedPresetRuleIds.delete(r.id));
   } else {
     rules.forEach((r) => selectedPresetRuleIds.add(r.id));
@@ -5862,6 +5993,36 @@ async function importSelectedPresetPackRules(replaceExisting) {
       (replaceExisting ? 'übernommen' : 'hinzugefügt') +
       '!'
   );
+}
+
+async function importEntirePresetPack() {
+  const activePack = PRESET_PACKS.find((p) => p.id === selectedPresetPackId) || PRESET_PACKS[0];
+  if (!activePack || !activePack.rules || activePack.rules.length === 0) return;
+
+  const currentCount = (appConfig.rules || []).length;
+  if (currentCount > 0) {
+    const ok = confirm(
+      'Möchten Sie wirklich alle bestehenden ' +
+        currentCount +
+        ' Regeln durch das komplette Preset-Set "' +
+        activePack.name +
+        '" (' +
+        activePack.rules.length +
+        ' Regeln) ersetzen?'
+    );
+    if (!ok) return;
+  }
+
+  appConfig.rules = activePack.rules.map((r, idx) => ({
+    ...r,
+    id: 'rule-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    priority: idx + 1,
+  }));
+
+  await saveConfigToStorage();
+  renderRules();
+  closePresetPacksModal();
+  alert('✓ Komplettes Preset-Set "' + activePack.name + '" (' + activePack.rules.length + ' Regeln) erfolgreich geladen. Bestehende Regeln wurden überschrieben.');
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

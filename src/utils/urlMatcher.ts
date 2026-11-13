@@ -3,7 +3,7 @@
  * Evaluates URLs against Wildcards, Domains, Prefixes, Regex, and Exact URLs
  */
 
-import { FirefoxContainerColor, MatchResult, TabColorRule } from '../types/extension';
+import { FirefoxContainerColor, MatchResult, TabColorRule, UnmatchedActiveTabStyle } from '../types/extension';
 
 export const FIREFOX_CONTAINER_COLORS: Record<FirefoxContainerColor, { name: string; hex: string; bg: string }> = {
   blue: { name: 'Blue', hex: '#37adff', bg: 'rgba(55, 173, 255, 0.15)' },
@@ -296,5 +296,188 @@ export function getOptimalTextColor(bgHex: string): string {
   const lum = getRelativeLuminance(bgHex);
   return lum > 0.4 ? '#15141a' : '#fbfbfe';
 }
+
+/**
+ * Parses a hex color into { r, g, b } components (0-255).
+ */
+export function parseHexRgb(hex: string): { r: number; g: number; b: number } {
+  if (!hex) return { r: 43, g: 42, b: 51 };
+  let clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean.split('').map((c) => c + c).join('');
+  }
+  if (clean.length < 6) return { r: 43, g: 42, b: 51 };
+  return {
+    r: parseInt(clean.substring(0, 2), 16) || 0,
+    g: parseInt(clean.substring(2, 4), 16) || 0,
+    b: parseInt(clean.substring(4, 6), 16) || 0,
+  };
+}
+
+/**
+ * Blends foreground hex with background hex at alpha (0..1) and returns resulting #rrggbb hex.
+ */
+export function blendHexColors(fgHex: string, bgHex: string, alpha: number): string {
+  const fg = parseHexRgb(fgHex);
+  const bg = parseHexRgb(bgHex);
+  const a = Math.max(0, Math.min(1, alpha));
+  const r = Math.round(fg.r * a + bg.r * (1 - a));
+  const g = Math.round(fg.g * a + bg.g * (1 - a));
+  const b = Math.round(fg.b * a + bg.b * (1 - a));
+  const toHex = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/**
+ * Shifts the brightness of a hex color away from the frame background so an active tab stands out clearly.
+ */
+export function shiftHexForTabLift(frameHex: string, toolbarHex: string): string {
+  const frameLum = getRelativeLuminance(frameHex);
+  const ratio = getContrastRatio(toolbarHex, frameHex);
+  // If toolbar already has a clear contrast ratio >= 1.28 against frame, use a slight boost of toolbar
+  if (ratio >= 1.28) {
+    return frameLum < 0.35
+      ? blendHexColors('#ffffff', toolbarHex, 0.08)
+      : blendHexColors('#000000', toolbarHex, 0.07);
+  }
+  // Otherwise, lift significantly from frame so the active tab is unmistakably distinct from inactive tabs
+  return frameLum < 0.35
+    ? blendHexColors('#ffffff', toolbarHex, 0.16)
+    : blendHexColors('#000000', toolbarHex, 0.12);
+}
+
+export interface UnmatchedActiveTabEvaluation {
+  styleMode: UnmatchedActiveTabStyle;
+  tabBgCss: string;
+  tabBgHex: string;
+  tabLineCss: string;
+  tabLineHex: string | null;
+  hasVisibleTopLine: boolean;
+  frameContrastRatio: number;
+  frameContrastStr: string;
+  lineContrastRatio: number;
+  textContrast: {
+    ratio: number;
+    ratioStr: string;
+    level: 'AAA' | 'AA' | 'Fail';
+    label: string;
+    isGood: boolean;
+  };
+  distinctionLevel: 'clear' | 'moderate' | 'poor';
+  distinctionLabel: string;
+  distinctionHint: string;
+  canDistinguish: boolean;
+}
+
+/**
+ * Computes the exact appearance and visual distinction metrics for an Active Tab WITHOUT a rule
+ * against the current Theme (frame / toolbar / text).
+ */
+export function getUnmatchedActiveTabAppearance(params: {
+  frameHex: string;
+  toolbarHex: string;
+  textHex: string;
+  defaultColor?: string;
+  activeTabOpacity?: number;
+  unmatchedActiveTabStyle?: UnmatchedActiveTabStyle;
+  unmatchedActiveTabBg?: string;
+  unmatchedActiveTabLine?: string;
+  enableUnmatchedTabLine?: boolean;
+}): UnmatchedActiveTabEvaluation {
+  const frameHex = params.frameHex || '#1c1b22';
+  const toolbarHex = params.toolbarHex || '#2b2a33';
+  const textHex = params.textHex || '#fbfbfe';
+  const defaultColor = params.defaultColor || '#37adff';
+  const opacity = params.activeTabOpacity ?? 0.35;
+  const styleMode: UnmatchedActiveTabStyle = params.unmatchedActiveTabStyle || 'subtle_lift';
+  const showLine = params.enableUnmatchedTabLine !== false;
+
+  let tabBgCss = toolbarHex;
+  let tabBgHex = toolbarHex;
+  let tabLineHex: string | null = null;
+
+  if (styleMode === 'subtle_lift') {
+    tabBgHex = shiftHexForTabLift(frameHex, toolbarHex);
+    tabBgCss = tabBgHex;
+    if (showLine) {
+      tabLineHex = params.unmatchedActiveTabLine || blendHexColors(textHex, toolbarHex, 0.55);
+    }
+  } else if (styleMode === 'default_accent') {
+    tabBgHex = blendHexColors(defaultColor, frameHex, opacity);
+    tabBgCss = hexToRgba(defaultColor, opacity);
+    if (showLine) {
+      tabLineHex = defaultColor;
+    }
+  } else if (styleMode === 'custom_color') {
+    const customBg = params.unmatchedActiveTabBg || shiftHexForTabLift(frameHex, toolbarHex);
+    tabBgHex = customBg;
+    tabBgCss = customBg;
+    if (showLine) {
+      tabLineHex = params.unmatchedActiveTabLine || defaultColor;
+    }
+  } else {
+    // 'toolbar_only'
+    tabBgHex = toolbarHex;
+    tabBgCss = toolbarHex;
+    tabLineHex = null;
+  }
+
+  const tabLineCss = tabLineHex ? `3px solid ${tabLineHex}` : '3px solid transparent';
+  const frameContrastRatio = getContrastRatio(tabBgHex, frameHex);
+  const frameContrastStr = frameContrastRatio.toFixed(2) + ':1';
+  const lineContrastRatio = tabLineHex ? getContrastRatio(tabLineHex, frameHex) : 1.0;
+  const hasVisibleTopLine = !!tabLineHex && lineContrastRatio >= 1.35;
+  const textContrast = getWcagRating(textHex, tabBgHex);
+
+  let distinctionLevel: 'clear' | 'moderate' | 'poor' = 'clear';
+  let distinctionLabel = 'Klar unterscheidbar';
+  let distinctionHint = 'Der aktive Tab ohne Regel hebt sich durch Flächenkontrast und Fokus-Linie eindeutig von inaktiven Tabs ab.';
+  let canDistinguish = true;
+
+  if (frameContrastRatio >= 1.25 && hasVisibleTopLine) {
+    distinctionLevel = 'clear';
+    distinctionLabel = 'Sehr gut unterscheidbar (Fläche + Fokus-Linie)';
+    distinctionHint = `Starker Kontrast (${frameContrastStr}) zum Rahmen plus sichtbare obere Fokus-Linie.`;
+    canDistinguish = true;
+  } else if (frameContrastRatio >= 1.30) {
+    distinctionLevel = 'clear';
+    distinctionLabel = 'Klar über Tab-Fläche unterscheidbar';
+    distinctionHint = `Deutlicher Flächenkontrast (${frameContrastStr}) zwischen aktivem Tab und inaktiven Tabs.`;
+    canDistinguish = true;
+  } else if (hasVisibleTopLine && frameContrastRatio >= 1.08) {
+    distinctionLevel = 'clear';
+    distinctionLabel = 'Gut unterscheidbar (Fokus-Linie + Tönung)';
+    distinctionHint = `Obere Fokus-Linie (${lineContrastRatio.toFixed(1)}:1) und Tab-Tönung (${frameContrastStr}) markieren den aktiven Tab klar.`;
+    canDistinguish = true;
+  } else if (hasVisibleTopLine || frameContrastRatio >= 1.15) {
+    distinctionLevel = 'moderate';
+    distinctionLabel = 'Mäßig unterscheidbar (Dezenter Kontrast)';
+    distinctionHint = `Geringer Flächenkontrast (${frameContrastStr}) zum Rahmen. Tipp: Kontrast-Abhebung oder Fokus-Linie verstärken.`;
+    canDistinguish = true;
+  } else {
+    distinctionLevel = 'poor';
+    distinctionLabel = 'Kaum unterscheidbar! (Verschmilzt mit Rahmen)';
+    distinctionHint = `Achtung: Aktiv-Tab (${tabBgHex}) und Rahmen (${frameHex}) haben fast identische Farben (${frameContrastStr}) und keine Fokus-Linie!`;
+    canDistinguish = false;
+  }
+
+  return {
+    styleMode,
+    tabBgCss,
+    tabBgHex,
+    tabLineCss,
+    tabLineHex,
+    hasVisibleTopLine,
+    frameContrastRatio,
+    frameContrastStr,
+    lineContrastRatio,
+    textContrast,
+    distinctionLevel,
+    distinctionLabel,
+    distinctionHint,
+    canDistinguish,
+  };
+}
+
 
 
